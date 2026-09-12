@@ -1,0 +1,250 @@
+{
+  "_hinweis": "Mapping ERP-Kostenart (KPTM_Wertsummen, Feld 'Kostenart') auf Spartenrechnung-Zeilen. sign=-1 dreht Erloes-Buchungen (die im ERP als negative/Haben-Werte gefuehrt werden) in positive Werte. wertart_filter=null bedeutet: alle Wertarten (ISWF+ISWV+ISMF) dieser Kostenart werden summiert.",
+  "zeilen_reihenfolge": [
+    "erloese",
+    "bestand_fe",
+    "bestand_ufe",
+    "aktivierte_eigenleistung",
+    "material",
+    "fremdleistungen",
+    "personalaufwand",
+    "sbe",
+    "sba",
+    "afa",
+    "fek",
+    "fek_deckungsdifferenz",
+    "mgk",
+    "mgk_deckungsdifferenz",
+    "vvgk",
+    "vvgk_deckungsdifferenz",
+    "sonderposten"
+  ],
+  "zeilen_labels": {
+    "erloese": "Erlöse",
+    "bestand_fe": "Bestandsveränderung FE",
+    "bestand_ufe": "Bestandsveränderung UFE",
+    "aktivierte_eigenleistung": "aktivierte Eigenleistung",
+    "betriebsleistung": "Betriebsleistung",
+    "material": "Material",
+    "fremdleistungen": "Fremdleistungen",
+    "personalaufwand": "Personalaufwand",
+    "sbe": "sbE (sonst. betriebl. Erträge)",
+    "sba": "sbA (sonst. betriebl. Aufwendungen)",
+    "afa": "Afa",
+    "rohmarge_1": "Rohmarge I",
+    "fek": "FEK (Ist, Kostenstellen)",
+    "fek_deckungsdifferenz": "FEK Deckungsdifferenz",
+    "fek_nach_dd": "FEK nach Deckungsdifferenz",
+    "db1": "DB I",
+    "mgk": "MGK",
+    "mgk_deckungsdifferenz": "MGK Deckungsdifferenz",
+    "mgk_nach_dd": "MGK nach Deckungsdifferenz",
+    "db2": "DB II",
+    "vvgk": "overhead Kosten (VVGK vor Deckungsdifferenz)",
+    "vvgk_deckungsdifferenz": "VVGK Deckungsdifferenz",
+    "vvgk_nach_dd": "VVGK nach Deckungsdifferenz",
+    "db3_vor_sonderposten": "DB III (vor Sonderposten)",
+    "sonderposten": "Sonderposten / Einmaleffekte",
+    "db3": "DB III"
+  },
+  "kostenart_zu_zeile": {
+    "4440000": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Bohrgestänge Inland"
+    },
+    "4440200": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Bohrgestänge EU"
+    },
+    "4440400": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Bohrgestänge Drittland"
+    },
+    "4460000": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Pressbohrtechnik Inland"
+    },
+    "4460200": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Pressbohrtechnik EU"
+    },
+    "4460400": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Pressbohrtechnik Drittland"
+    },
+    "4470000": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Injektionstechnik Inland"
+    },
+    "4470200": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Injektionstechnik EU"
+    },
+    "4470400": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Erlöse Injektionstechnik Drittland"
+    },
+    "4521060": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Injektionstechnik Inland"
+    },
+    "4521400": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Bohrgestänge Inland"
+    },
+    "4521710": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Pressbohrtechnik Inland"
+    },
+    "4531060": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Injektionstechnik Drittland"
+    },
+    "4531400": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Bohrgestänge Drittland"
+    },
+    "4531710": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Pressbohrtechnik Drittland"
+    },
+    "4535060": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Injektionstechnik EU"
+    },
+    "4535400": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Bohrgestänge EU"
+    },
+    "4535710": {
+      "zeile": "erloese",
+      "sign": -1,
+      "bez": "Fracht/Verpackung Pressbohrtechnik EU"
+    },
+    "4825000": {
+      "zeile": "bestand_fe",
+      "sign": -1,
+      "bez": "Bestandsänderung Bohrgestänge Fertigwaren"
+    },
+    "4825200": {
+      "zeile": "bestand_fe",
+      "sign": -1,
+      "bez": "Bestandsänderung Pressbohrtechnik Fertigwaren"
+    },
+    "4825300": {
+      "zeile": "bestand_fe",
+      "sign": -1,
+      "bez": "Bestandsänderung Injektionstechnik Fertigwaren"
+    },
+    "5300100": {
+      "zeile": "material",
+      "sign": 1,
+      "bez": "Verbrauch Rohstoffe/Rohmaterial"
+    },
+    "5320100": {
+      "zeile": "material",
+      "sign": 1,
+      "bez": "Verbrauch Hilfs-/Betriebsstoffe"
+    },
+    "5800000": {
+      "zeile": "material",
+      "sign": 1,
+      "bez": "Bezugskosten (Fracht/Verpackung Einkauf)"
+    },
+    "5900000": {
+      "zeile": "fremdleistungen",
+      "sign": 1,
+      "bez": "Fremdleistungen"
+    },
+    "5901000": {
+      "zeile": "fremdleistungen",
+      "sign": 1,
+      "bez": "Fremdleistung mit Material"
+    },
+    "C599199": {
+      "zeile": "mgk",
+      "sign": 1,
+      "bez": "Materialgemeinkosten (Zuschlag 10 % auf Material + Fremdleistungen)"
+    },
+    "Q500100": {
+      "zeile": "vvgk",
+      "sign": 1,
+      "bez": "Overhead-Costs"
+    },
+    "6420000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Beiträge und Gebühren"
+    },
+    "6651000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Übernachtungskosten"
+    },
+    "6666000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Verpflegungspauschale Inland"
+    },
+    "6681000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Verpflegungspauschale Ausland"
+    },
+    "6740000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Ausgangsfrachten Inland",
+      "umbuchung": "fracht"
+    },
+    "6741000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Ausgangsfrachten Ausland",
+      "umbuchung": "fracht"
+    },
+    "6825000": {
+      "zeile": "sba",
+      "sign": 1,
+      "bez": "Rechts- und Beratungskosten"
+    }
+  },
+  "umbuchung_fracht_suffix": "0100",
+  "umbuchung_fracht_hinweis": "Kostenarten mit \"umbuchung\": \"fracht\" werden nicht auf der operativen Produktgruppe ausgewiesen, sondern auf dem Fracht-Kostenobjekt derselben Sparten-Familie (DP0002 -> DP0100, PB0001 -> PB0100, IT0001 -> IT0100, SR0001 -> SR0100). Das entspricht dem Vermerk \"nach Umbuchung Frachtkosten\" in der manuellen Referenzrechnung und wurde fuer Q1 2026 auf allen 8 betroffenen Sparten centgenau verifiziert. Die Fracht-ERLOESE (4521*/4531*/4535*) sind im ERP bereits direkt auf den Fracht-Kostenobjekten gebucht und werden NICHT umgebucht. Kostenart 3723000 (Verbdlk. Berufsgenossenschaft) ist bewusst nicht gemappt: sie traegt im ERP keine Produktgruppe und ist in der Referenzrechnung ebenfalls nicht enthalten.",
+  "kostenstellen_praefix": "K2",
+  "kostenstellen_wertart": "ISWF",
+  "mgk_zuschlagssatz_toleranz": 0.005,
+  "vvgk_zuschlagssatz_toleranz": 0.005,
+  "zuschlagssatz_hinweis": "Die Zuschlagskalkulation des Hauses wurde an der Referenzrechnung Q1 2026 vollstaendig verifiziert: FEK = Fertigungsstunden x Standardstundensatz; MGK (Konto C599199) = fester Satz auf Material + Fremdleistungen (11 von 14 Sparten unter 50 Cent - Material allein trifft nicht); VVGK (Konto Q500100) = fester Satz auf die Herstellkosten, also auf Material + Fremdleistungen + MGK + FEK (14 von 15 Sparten unter 1 EUR). Dass Q500100 in zwei Wertarten vorkommt, ist die Aufteilung desselben Satzes: ISWF traegt den Satz auf FEK, ISWV den Satz auf die Materialseite. Die Saetze werden NICHT zur Berechnung genutzt, sondern aus den Rohdaten als Plausibilitaetsprobe zurueckgerechnet - die konkreten Werte stehen deshalb nirgends im Code, sondern ergeben sich aus den eigenen Daten.",
+  "standard_stundensatz_hinweis": "Das ERP bewertet Fertigungsstunden mit diesem festen Satz: ISWF (Wert) = ISMF (Stunden) x Satz. Der Satz ist auch in der manuellen Referenzrechnung fest hinterlegt (Zelle C77 'HK-Stundensatz aktuell (Standardkostensatz)'). Bei einer Aenderung des Satzes im ERP muss dieser Wert hier nachgezogen werden.",
+  "auftragsart_gemeinkosten": [
+    "5"
+  ],
+  "auftragsart_lager": [
+    "LAG",
+    "DPL",
+    "PBL",
+    "INN",
+    "ITL",
+    "SRL"
+  ],
+  "auftragsart_hinweis": "Auftragsart '5' sind Kostenstellen-Sammelauftraege; die darauf gebuchten Fertigungsstunden gelten als unproduktive Gemeinkosten. Verifiziert an Q1 2026: centgenau die Groesse 'davon (unproduktive) Gemeinkosten' aus der manuellen Zusatzauswertung des Controllings, 14 von 14 Kostenstellen. Die uebrigen Auftragsarten trennen Lager- von Kundenauftraegen.",
+  "kostenstellen_hinweis": "Kostenarten mit Praefix 'K2' (z.B. K210000 Konstruktion) sind Fertigungskostenstellen aus KPTM (Wertart ISWF=Ist-Wert, ISMF=Ist-Menge/Stunden). Diese ergeben den GESAMTEN Ist-Fertigungswert, NICHT direkt die Zeile 'FEK' der Spartenrechnung - die Original-Datei verwendet fuer FEK einen Standardkosten-Ansatz (Menge x Stundensatz, siehe betriebsparameter.json) getrennt nach produktiv/Lager/Kundenauftrag. Der volle Ist-Wert wird zur Information trotzdem ausgegeben (Zeile 'fek' Tier1.5)."
+}

@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Dieses Repository ist OEFFENTLICH. Es enthaelt Code, Mapping-Tabellen und die
+# Weboberflaeche - keine Firmenzahlen.
+#
+# Alles Vertrauliche liegt im Unterordner intern/. Das ist ein eigenes, PRIVATES
+# Repository (spartenrechner-intern) und wird hier deshalb komplett ignoriert.
+# ---------------------------------------------------------------------------
+intern/
+
+# Rohdaten und Ergebnisse
+rohdaten/
+referenz/
+output/
+
+# Tabellen jeder Art, an jedem Ort. Frueher stand hier eine Ausnahme
+# '!docs/**/*.xlsx' - die hat Excel-Dateien unter docs/ wieder freigegeben,
+# also genau dort, wo zum Testen Rohdaten abgelegt werden. Keine Ausnahmen mehr:
+# die Weboberflaeche braucht keine mitgelieferte Excel-Datei.
+*.xls
+*.xlsx
+*.xlsm
+*.csv
+
+# Betriebsparameter gehoeren nach intern/ - diese Regel faengt ab, wenn doch
+# einmal eine Kopie im Projekt landet.
+betriebsparameter.json
+!config/betriebsparameter.beispiel.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code runtime state
+.claude/*.lock

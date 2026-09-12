@@ -1,0 +1,12 @@
+{
+  "_hinweis": "Vorlage. Kopieren nach config/betriebsparameter.json und mit den eigenen Werten fuellen - diese Kopie wird von .gitignore ausgeschlossen und gelangt nicht ins Repository. In der Weboberflaeche laedt man die ausgefuellte Datei einmalig hoch; der Browser merkt sie sich.",
+  "_standard_stundensatz": "Verrechnungssatz Fertigung in EUR/h. Rechnet keine GuV-Zeile, sondern nur Euro in Stunden um (Blatt Fertigungsstunden).",
+  "standard_stundensatz": null,
+  "_anfangsbestand": "Werkstattbestand (unfertige Erzeugnisse) je Sparte zum 01.01., in EUR, je Geschaeftsjahr. Nur fuer die Zeile Bestandsveraenderung UFE noetig: UFE = Bestand(Stichtag) - Anfangsbestand. Sauberste Quelle ist ein PWBS-Export zum 01.01.; ersatzweise laesst sich der Wert aus einem spaeteren Bestand abzueglich der bis dahin ausgewiesenen UFE-Veraenderung zurueckrechnen.",
+  "anfangsbestand": {
+    "2026": {
+      "DP0001": 0.0,
+      "PB0001": 0.0
+    }
+  }
+}

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spartenrechner – Perforator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header panel">
+      <div class="header-title">
+        <img class="header-logo" src="assets/perforator-logo.png" alt="Perforator">
+        <h1>Spartenrechner</h1>
+        <p class="subtitle">Perforator GmbH</p>
+      </div>
+    </header>
+
+    <div class="privacy-banner">
+      🔒 <strong>Alles läuft lokal in Ihrem Browser.</strong> Es werden keine Dateien hochgeladen, keine Daten
+      an einen Server gesendet oder gespeichert. Die Verarbeitung passiert vollständig auf Ihrem Rechner
+      (Python läuft als WebAssembly direkt im Browser).
+    </div>
+
+    <div id="loading-status" class="status-box">
+      ⏳ Python-Umgebung wird geladen … (einmalig, ca. 10–20 Sekunden)
+    </div>
+
+    <form id="form" class="panel" style="display:none;">
+      <div class="field" id="parameter-field">
+        <label>Betriebsparameter <span id="parameter-status" class="param-badge">nicht hinterlegt</span></label>
+        <p class="hinweis" id="parameter-hinweis">
+          Stundensatz und Werkstattbestand zum Jahresanfang. Diese Werte stehen bewusst
+          <strong>nicht</strong> im öffentlichen Repository – aus ihnen liesse sich die
+          Preisbildung zurückrechnen. Einmalig hinterlegen: Ihr Browser merkt sie sich,
+          sie verlassen den Rechner nicht.
+          <a href="config/betriebsparameter.beispiel.json" download>Vorlage herunterladen</a>
+        </p>
+        <div class="dropzone" id="dropzone-param">
+          <span id="dropzone-param-text">betriebsparameter.json auswählen</span>
+          <input type="file" id="file-param" accept=".json" hidden>
+        </div>
+        <button type="button" id="param-loeschen" style="display:none;">Hinterlegte Parameter löschen</button>
+      </div>
+
+      <div class="field">
+        <label for="zeitraum">Zeitraum (Anzeigetext)</label>
+        <input type="text" id="zeitraum" placeholder="z.B. Jan-März 2026" required>
+      </div>
+
+      <div class="field">
+        <label>ERP-Rohdaten – KPTM_Wertsummen (*.xls / *.xlsx) <span class="required">Pflicht</span></label>
+        <div class="dropzone" id="dropzone-kptm">
+          <span id="dropzone-kptm-text">Datei hierher ziehen oder klicken zum Auswählen</span>
+          <input type="file" id="file-kptm" accept=".xls,.xlsx" hidden>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>BWA-Datei (optional – für automatischen GuV-Kontroll-Check)</label>
+        <div class="dropzone" id="dropzone-bwa">
+          <span id="dropzone-bwa-text">Datei hierher ziehen oder klicken zum Auswählen (optional)</span>
+          <input type="file" id="file-bwa" accept=".xlsx" hidden>
+        </div>
+      </div>
+
+      <div class="field" id="bwa-sheet-field" style="display:none;">
+        <label for="bwa-sheet">BWA-Sheet (Periode, kumuliert bis Periodenende)</label>
+        <select id="bwa-sheet"></select>
+      </div>
+
+      <details class="erweitert">
+        <summary>Bestandsveränderung UFE mitrechnen (empfohlen)</summary>
+        <p class="hinweis">
+          Ergänzt die Zeile „Bestandsveränderung UFE" – damit stimmen Betriebsleistung und
+          Rohmarge I vollständig. Nötig sind der <strong>Werkstattbestand zum Periodenende</strong>
+          und <strong>eine PFAK-Datei</strong>: laden Sie die <strong>neueste</strong> hoch, die Sie
+          haben. Sie dient nur dazu, die offenen Aufträge einer Sparte zuzuordnen – je aktueller
+          der Export, desto mehr Aufträge sind darin bereits fertiggemeldet und damit zuordenbar.
+          <br><br>
+          Nach der Berechnung sehen Sie, wie viel des Werkstattbestands zugeordnet werden konnte.
+          Bleibt eine Lücke, können Sie die größten offenen Aufträge dort <strong>von Hand einer
+          Sparte zuordnen</strong>. Erst wenn weniger als 1 % offen ist, wird die Zeile gerechnet –
+          lieber keine Zahl als eine falsche.
+          <br><br>
+          Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante; alternativ kann eine
+          PWBS-Datei zum Periodenbeginn hochgeladen werden.
+        </p>
+
+        <div class="field">
+          <label>PWBS Werkstattbestand – Periodenende</label>
+          <div class="dropzone" id="dropzone-pwbs-e">
+            <span id="dropzone-pwbs-e-text">Datei auswählen</span>
+            <input type="file" id="file-pwbs-e" accept=".xls,.xlsx" hidden>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>PFAK Fertigungsaufträge – neueste Datei</label>
+          <div class="dropzone" id="dropzone-pfak">
+            <span id="dropzone-pfak-text">Datei auswählen</span>
+            <input type="file" id="file-pfak" accept=".xlsx" multiple hidden>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>PWBS Werkstattbestand – Periodenbeginn (optional)</label>
+          <div class="dropzone" id="dropzone-pwbs-a">
+            <span id="dropzone-pwbs-a-text">nur nötig, wenn kein Anfangsbestand hinterlegt ist</span>
+            <input type="file" id="file-pwbs-a" accept=".xls,.xlsx" hidden>
+          </div>
+        </div>
+      </details>
+
+      <button type="submit" id="submit-btn" disabled>Spartenrechnung erstellen</button>
+    </form>
+
+    <div id="result" class="panel" style="display:none;"></div>
+    <div id="error" class="status-box error" style="display:none;"></div>
+
+    <footer>
+      <p>Quelle &amp; Dokumentation: <a href="https://github.com/nikolausridder1301/spartenrechner">github.com/nikolausridder1301/spartenrechner</a></p>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
