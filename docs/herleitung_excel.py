@@ -186,7 +186,12 @@ def _kptm_blatt(wb, df, mapping, bereiche):
     for c in (c_zeile, c_vz, c_ziel, c_betrag):
         ws.column_dimensions[c].width = 19
     return {"blatt": "Daten_KPTM", "erste": erste, "letzte": letzte,
-            "zeile": c_zeile, "ziel": c_ziel, "betrag": c_betrag}
+            "zeile": c_zeile, "ziel": c_ziel, "betrag": c_betrag,
+            # Rohspalten - das Blatt 'Fertigungsstunden' summiert direkt darueber,
+            # nicht ueber die Hilfsspalten: dort geht es um ISWF/ISMF der
+            # Kostenstellen, nicht um die Zuordnung auf GuV-Zeilen.
+            "kostenart": s_ka, "wertart": s_wa, "wert": s_wert,
+            "auftragsart": spalten.get("Auftragsart")}
 
 
 def _zuordnung_blatt(wb, nach_auftrag, nach_artikel, manuelle_zuordnung=None):
@@ -333,6 +338,11 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
         for r in range(erste, erste + len(df_b)):
             ws.cell(row=r, column=2).number_format = "#,##0.00"
 
+    # Das Stundenblatt rechnet aus denselben Rohdaten - also gehoert es genauso
+    # verformelt, sonst steht neben einer nachvollziehbaren Tabelle eine, die man
+    # glauben muss.
+    anzahl_stunden = verformele_fertigungsstunden(wb, mapping, kptm)
+
     kontrolle = _kontrollblatt(wb, result, produktgruppen)
     anzahl = _verformele_spartenrechnung(
         wb, result, mapping, produktgruppen, kptm, kontrolle,
@@ -346,6 +356,9 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "NACHVOLLZIEHBARKEIT",
             f"Im Blatt 'Spartenrechnung' sind {anzahl} Zellen Formeln, die auf die "
             "Datenblaetter zeigen. Klicken Sie eine Zahl an, um zu sehen, woraus sie entsteht.",
+            f"Im Blatt 'Fertigungsstunden' sind es {anzahl_stunden} Zellen - dort summieren "
+            "SUMMEWENNS ueber die Kostenstellen (Kostenart K2*) in 'Daten_KPTM', getrennt nach "
+            "Wertart ISWF (Euro) und ISMF (Stunden) sowie nach Auftragsart.",
             "",
             "  Zeilen MIT Formel:  Erloese, Bestandsveraenderung FE, Material, Fremdleistungen,",
             "                      sbA, FEK, MGK, overhead Kosten - sie summieren ueber "
@@ -517,4 +530,74 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
                     value=f"=MAX(Kontrolle!$B${block + 1}:${letzte_sp}${r_block - 1})")
         z.number_format = "#,##0.00"
         z.font = Font(bold=True)
+    return anzahl
+
+
+def verformele_fertigungsstunden(wb, mapping, kptm):
+    """Ersetzt die Zahlen im Blatt 'Fertigungsstunden' durch Formeln auf 'Daten_KPTM'.
+
+    Dasselbe Prinzip wie bei der Spartenrechnung: Das Blatt rechnet aus denselben
+    Rohdaten, also soll man auch hier jede Zahl anklicken und ihre Herkunft sehen.
+    Die Spaltenlogik entspricht fertigungsstunden() im Kernmodul:
+      FEK inkl. Gemeinkosten          Kostenart = Kostenstelle, Wertart = ISWF
+      davon unproduktive Gemeinkosten  zusaetzlich Auftragsart 5 (Sammelauftraege)
+      produktive FEK                   Differenz der beiden
+      davon Lagerauftraege             Auftragsarten LAG/DPL/PBL/INN/ITL/SRL
+      davon Kundenauftraege            produktive FEK minus Lagerauftraege
+      Stunden gesamt                   dieselbe Kostenstelle, aber Wertart ISMF
+
+    Mehrere Auftragsarten werden als Summe einzelner SUMMEWENNS geschrieben, nicht
+    als Array-Konstante - die laesst Excel in einer von openpyxl erzeugten Datei
+    nicht zu (die Datei gilt dann als beschaedigt).
+    """
+    if "Fertigungsstunden" not in wb.sheetnames:
+        return 0
+    ws = wb["Fertigungsstunden"]
+    b, v, bis = kptm["blatt"], kptm["erste"], kptm["letzte"]
+    r_ka, r_wa, r_wert = kptm["kostenart"], kptm["wertart"], kptm["wert"]
+    r_aa = kptm.get("auftragsart")
+    if not r_aa:
+        return 0
+
+    def bereich(sp):
+        return f"'{b}'!${sp}${v}:${sp}${bis}"
+
+    wertart = mapping.get("kostenstellen_wertart", "ISWF")
+    gemein = list(mapping.get("auftragsart_gemeinkosten", ["5"]))
+    lager = list(mapping.get("auftragsart_lager", []))
+
+    def summe_ueber_arten(zeile, arten):
+        """Summe je Auftragsart, einzeln addiert statt als Array-Konstante."""
+        return "+".join(
+            f'SUMIFS({bereich(r_wert)},{bereich(r_ka)},$A{zeile},'
+            f'{bereich(r_wa)},"{wertart}",{bereich(r_aa)},"{a}")'
+            for a in arten)
+
+    anzahl = 0
+    zeile = 5
+    while ws.cell(row=zeile, column=1).value and str(ws.cell(row=zeile, column=1).value) != "SUMME":
+        formeln = {
+            3: f'=SUMIFS({bereich(r_wert)},{bereich(r_ka)},$A{zeile},{bereich(r_wa)},"{wertart}")',
+            4: "=" + summe_ueber_arten(zeile, gemein),
+            5: f"=C{zeile}-D{zeile}",
+            6: "=" + summe_ueber_arten(zeile, lager) if lager else None,
+            7: f"=E{zeile}-F{zeile}",
+            8: f'=SUMIFS({bereich(r_wert)},{bereich(r_ka)},$A{zeile},{bereich(r_wa)},"ISMF")',
+        }
+        for spalte, formel in formeln.items():
+            if formel is None:
+                continue
+            z = ws.cell(row=zeile, column=spalte, value=formel)
+            z.number_format = "#,##0.00"
+            anzahl += 1
+        zeile += 1
+
+    # Summenzeile ebenfalls als Formel
+    if str(ws.cell(row=zeile, column=1).value) == "SUMME":
+        for spalte in range(3, 9):
+            sp = get_column_letter(spalte)
+            z = ws.cell(row=zeile, column=spalte, value=f"=SUM({sp}5:{sp}{zeile - 1})")
+            z.font = Font(bold=True)
+            z.number_format = "#,##0.00"
+            anzahl += 1
     return anzahl

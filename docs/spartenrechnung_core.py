@@ -1137,9 +1137,13 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         ws3 = wb.create_sheet("Fertigungsstunden")
         ws3.cell(row=1, column=1,
                  value=f"Auswertung Fertigungsauftraege je Kostenstelle – {zeitraum}").font = Font(bold=True, size=12)
-        ws3.cell(row=2, column=1,
-                 value=f"Stundenbewertung mit {mapping.get('standard_stundensatz')} EUR/h "
-                       f"(Standardkostensatz des ERP)")
+        # Die Stunden kommen aus der Wertart ISMF, nicht aus Betrag/Satz - der Satz
+        # ist hier nur die Umrechnung, die das ERP selbst verwendet (ISWF = ISMF x Satz).
+        satz = mapping.get("standard_stundensatz")
+        ws3.cell(row=2, column=1, value=(
+            "Euro-Spalten: Wertart ISWF. Spalte 'Stunden gesamt': Wertart ISMF, direkt aus "
+            "den Rohdaten - nicht aus Betrag geteilt durch Satz."
+            + (f" (Das ERP bewertet die Stunden mit {satz} EUR/h.)" if satz else "")))
         spalten = list(stunden_df.columns)
         for j, name in enumerate(spalten, start=1):
             c = ws3.cell(row=4, column=j, value=name)
