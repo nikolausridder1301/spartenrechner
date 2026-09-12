@@ -379,11 +379,15 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
     label_zu_key = {}
     for key in result.index:
         label_zu_key[str(mapping["zeilen_labels"].get(key, key)).strip()] = key
+    # Nur der zusammenhaengende Tabellenblock direkt unter der Kopfzeile. Weiter
+    # unten steht die Datengrundlage des Diagramms, deren Zeilen genauso heissen
+    # ("Material", "Fremdleistungen"). Ohne diese Grenze wuerden sie mitverformelt -
+    # und zwar mit den Spalten der Haupttabelle, die dort nicht gelten.
     zeilen_nr = {}
     for r in range(kopfzeile + 1, kopfzeile + 60):
         beschriftung = ws.cell(row=r, column=1).value
-        if beschriftung is None:
-            continue
+        if beschriftung is None or not str(beschriftung).strip():
+            break
         key = label_zu_key.get(str(beschriftung).strip())
         if key:
             zeilen_nr[key] = r

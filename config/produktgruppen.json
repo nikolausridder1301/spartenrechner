@@ -46,7 +46,10 @@
     "PB0005": "Service Pressbohrtechnik",
     "PB0100": "Fracht und Verpackung Pressbohrtechnik",
     "SR0001": "Schneidrollen",
-    "SR0100": "Fracht Schneidrollen"
+    "SR0100": "Fracht Schneidrollen",
+    "PB0006": "",
+    "PB0008": ""
   },
-  "_hinweis_neue_sparten": "Neue Produktgruppen tauchen im Jahresverlauf auf (PB0006 und PB0008 erstmals in Q2 2026). Das Tool verliert sie nicht - es haengt unbekannte Gruppen als eigene Spalte hinten an und meldet sie. Hier eingetragen stehen sie an der richtigen Stelle der Familienreihenfolge. Bitte die Meldung 'unbekannte Produktgruppen' ernst nehmen und die Liste ergaenzen, statt sie zu ignorieren."
+  "_hinweis_neue_sparten": "Neue Produktgruppen tauchen im Jahresverlauf auf (PB0006 und PB0008 erstmals in Q2 2026). Das Tool verliert sie nicht - es haengt unbekannte Gruppen als eigene Spalte hinten an und meldet sie. Hier eingetragen stehen sie an der richtigen Stelle der Familienreihenfolge. Bitte die Meldung 'unbekannte Produktgruppen' ernst nehmen und die Liste ergaenzen, statt sie zu ignorieren.",
+  "_hinweis_bezeichnung": "Klartextnamen der Sparten, erscheinen als Zeile 'Bezeichnung' im Ergebnis und als Beschriftung im Diagramm. Leer bedeutet: Name nicht bekannt - dann zeigt das Tool den Code. PB0006 und PB0008 sind 2026 neu entstanden; ihre Bezeichnung bitte aus dem ERP nachtragen, erfunden wird hier nichts."
 }

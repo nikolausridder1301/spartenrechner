@@ -18,6 +18,10 @@ import pandas as pd
 import openpyxl
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.label import DataLabelList
+from openpyxl.drawing.line import LineProperties
+from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.utils import get_column_letter
 
 FILL_AUTO = PatternFill("solid", fgColor="D9EAD3")       # gruen: automatisch, gut rekonziliert
@@ -692,8 +696,98 @@ def neu_berechnen(result):
     return result
 
 
+
+# Farben des Diagramms. Kosten in gedeckten Blau-/Grautoenen, das Ergebnis als
+# einziger kraeftiger Akzent - so liest man die Balken von unten nach oben und
+# sieht zuletzt, was uebrig bleibt.
+DIAGRAMM_SERIEN = [
+    ("material", "Material", "3E5C8A"),
+    ("fremdleistungen", "Fremdleistungen", "5B7FB0"),
+    ("personalaufwand", "Personalaufwand", "8FA9C9"),
+    ("sba", "sonst. betriebl. Aufwand", "B6C6DC"),
+    ("fek_nach_dd", "Fertigungseinzelkosten", "6E7B8B"),
+    ("mgk_nach_dd", "Materialgemeinkosten", "9AA5B1"),
+    ("vvgk_nach_dd", "Verwaltung & Vertrieb", "C3CAD2"),
+    ("db3", "Deckungsbeitrag III", "1F9D6B"),
+]
+
+
+def _ist_sparte(code):
+    """Echte Produktgruppe (zwei Buchstaben + vier Ziffern)? Die Referenzrechnung
+    fuehrt daneben Pseudo-Kostenobjekte wie 910000 fuer Abgrenzungen - die gehoeren
+    nicht ins Diagramm, weil sie keine Sparte sind."""
+    c = str(code)
+    return len(c) == 6 and c[:2].isalpha() and c[2:].isdigit()
+
+
+def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
+    """Gestapelte Balken je Sparte: woraus sich die Betriebsleistung zusammensetzt.
+
+    Entspricht dem Diagramm, das bisher von Hand gepflegt wurde. Die Datenreihen
+    verweisen auf die Tabelle darueber, sind also keine Kopie: wer oben eine
+    Deckungsdifferenz nachtraegt, sieht sie sofort im Bild.
+    """
+    # Nur Sparten mit Bewegung. Leere Spalten (noch nicht bebuchte oder ausgelaufene
+    # Produktgruppen) machen das Bild schmal und unlesbar, ohne etwas auszusagen.
+    sparten = [c for c in cols if _ist_sparte(c)
+               and abs(float(result.loc["betriebsleistung", c])) > 0.005]
+    if not sparten or not zeilen_nr:
+        return start_zeile
+
+    kopf = start_zeile + 1
+    ws.cell(row=kopf - 1, column=1,
+            value="Datengrundlage des Diagramms (verweist auf die Tabelle oben)").font = Font(
+                italic=True, size=9, color="808080")
+    ws.cell(row=kopf, column=1, value="Position").font = FONT_BOLD
+    for j, pg in enumerate(sparten, start=2):
+        z = ws.cell(row=kopf, column=j, value=str(ws.cell(row=4, column=cols.index(pg) + 2).value or pg))
+        z.font = Font(bold=True, size=9)
+        z.alignment = Alignment(horizontal="center", wrap_text=True)
+    ws.row_dimensions[kopf].height = 30
+
+    r = kopf + 1
+    serien_zeilen = []
+    for key, beschriftung, _farbe in DIAGRAMM_SERIEN:
+        if key not in zeilen_nr:
+            continue
+        ws.cell(row=r, column=1, value=beschriftung)
+        for j, pg in enumerate(sparten, start=2):
+            sp = get_column_letter(cols.index(pg) + 2)
+            z = ws.cell(row=r, column=j, value=f"={sp}{zeilen_nr[key]}")
+            z.number_format = "#,##0"
+        serien_zeilen.append((r, key))
+        r += 1
+
+    ch = BarChart()
+    ch.type = "col"
+    ch.grouping = "stacked"
+    ch.overlap = 100
+    ch.title = f"Spartenrechnung {zeitraum} – Kostenstruktur und Ergebnis je Sparte"
+    ch.y_axis.title = "EUR"
+    ch.y_axis.numFmt = "#,##0"
+    ch.y_axis.majorGridlines.spPr = GraphicalProperties(ln=LineProperties(solidFill="E8EAED"))
+    ch.x_axis.delete = False
+    ch.y_axis.delete = False
+    ch.gapWidth = 40
+    ch.height = 11
+    ch.width = max(20, 2.0 * len(sparten))
+    ch.legend.position = "b"
+    ch.legend.overlay = False
+
+    kategorien = Reference(ws, min_col=2, max_col=len(sparten) + 1, min_row=kopf)
+    farben = {k: f for k, _b, f in DIAGRAMM_SERIEN}
+    for zeile, key in serien_zeilen:
+        daten = Reference(ws, min_col=1, max_col=len(sparten) + 1, min_row=zeile, max_row=zeile)
+        ch.add_data(daten, titles_from_data=True, from_rows=True)
+        ch.series[-1].graphicalProperties = GraphicalProperties(solidFill=farben[key])
+        ch.series[-1].graphicalProperties.ln = LineProperties(noFill=True)
+    ch.set_categories(kategorien)
+    ws.add_chart(ch, f"A{r + 2}")
+    return r + 24
+
+
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
-                 stunden_df=None, unproduktiv=None, herleitung=None):
+                 stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -710,13 +804,25 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         cell.font = FONT_HEADER
         cell.alignment = Alignment(horizontal="center")
 
-    row_i = 4
+    # Klartextnamen unter die Codes. Ohne sie liest niemand ausser dem Controlling
+    # die Tabelle - 'DP0002' sagt nichts, 'DTH < 139,7' schon.
+    bezeichnungen = pg_bezeichnungen or {}
+    ws.cell(row=4, column=1, value="Bezeichnung").font = Font(italic=True, size=9)
+    for j, c in enumerate(cols, start=2):
+        cell = ws.cell(row=4, column=j, value=bezeichnungen.get(c, "" if c == "Summe" else c))
+        cell.font = Font(italic=True, size=9)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+    ws.row_dimensions[4].height = 26
+
+    row_i = 5
+    zeilen_nr = {}
     for key in mapping["zeilen_reihenfolge"] + [
         "betriebsleistung", "rohmarge_1", "fek_nach_dd", "db1", "mgk_nach_dd", "db2",
         "vvgk_nach_dd", "db3_vor_sonderposten", "db3",
     ]:
         if key not in result.index:
             continue
+        zeilen_nr[key] = row_i
         label_cell = ws.cell(row=row_i, column=1, value=labels.get(key, key))
         klass = ZEILEN_KLASSE.get(key, "manual")
         if klass == "formula":
@@ -728,6 +834,8 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
             cell.border = BORDER
             cell.number_format = "#,##0.00"
         row_i += 1
+
+    row_i = _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, row_i + 2)
 
     if bwa_ergebnis is not None:
         db3_summe = float(result.loc["db3", "Summe"])
@@ -940,6 +1048,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     stunden_df = fertigungsstunden(df, mapping)
     write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=bwa_ergebnis, bwa_sheet=bwa_sheet,
                  stunden_df=stunden_df, unproduktiv=(unprod_betrag, unprod_stunden),
+                 pg_bezeichnungen=pg_config.get("bezeichnung", {}),
                  herleitung={
                      "produktgruppen": produktgruppen,
                      "kptm_df": df,
