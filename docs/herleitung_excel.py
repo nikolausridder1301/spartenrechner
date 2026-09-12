@@ -129,7 +129,12 @@ def _mapping_blatt(wb, mapping, produktgruppen):
     for sp, br in (("I", 30), ("J", 14), ("K", 11)):
         ws.column_dimensions[sp].width = br
     n = max(len(regel), 1)
-    return ws, (f"Mapping!$G$2:$G${len(produktgruppen) + 1}", f"Mapping!$I$2:$K${n + 1}")
+    # Begrenzte Bereiche statt ganzer Spalten: bei 60.000 Formeln, die hier
+    # nachschlagen, ist der Unterschied beim Neuberechnen deutlich spuerbar.
+    letzte_mapping = 3 + len(zeilen)
+    return ws, (f"Mapping!$G$2:$G${len(produktgruppen) + 1}",
+                f"Mapping!$I$2:$K${n + 1}",
+                f"Mapping!$A$4:$E${letzte_mapping}")
 
 
 def _kptm_blatt(wb, df, mapping, bereiche):
@@ -138,11 +143,38 @@ def _kptm_blatt(wb, df, mapping, bereiche):
     Dadurch ist die Zuordnung nicht das Ergebnis eines unsichtbaren Programmschritts,
     sondern in jeder Zeile nachvollziehbar und im Zweifel korrigierbar.
     """
-    ws, erste = _blatt_mit_daten(
-        wb, "Daten_KPTM", df,
-        "Der hochgeladene KPTM-Export, unveraendert. Die vier gelben Spalten rechts "
-        "sind Formeln: sie schlagen im Blatt 'Mapping' nach, auf welche GuV-Zeile eine "
-        "Kostenart geht. Das Blatt 'Spartenrechnung' summiert dann ueber diese Spalten.")
+    # Spalten ohne Informationsgehalt weglassen. Ein KPTM-Export fuehrt rund 36
+    # Spalten, von denen etwa 20 entweder komplett leer sind oder in allen 15.000
+    # Zeilen denselben Wert tragen (z.B. 'Datenbestand = Istdaten'). Sie machen das
+    # Blatt gut doppelt so gross, ohne irgendetwas auszusagen - der konstante Wert
+    # steht einmal als Notiz ueber der Tabelle, was lesbarer ist als 15.000
+    # Wiederholungen. Spalten mit echtem Inhalt bleiben alle erhalten, auch die, die
+    # das Werkzeug selbst nicht braucht.
+    leer, konstant = [], {}
+    for spalte in df.columns:
+        werte = df[spalte].dropna().unique()
+        if len(werte) == 0:
+            leer.append(str(spalte))
+        elif len(werte) == 1:
+            konstant[str(spalte)] = werte[0]
+    df = df.drop(columns=[c for c in df.columns if str(c) in leer or str(c) in konstant])
+
+    hinweis = ("Der hochgeladene KPTM-Export. Die vier gelben Spalten rechts sind Formeln: "
+               "sie schlagen im Blatt 'Mapping' nach, auf welche GuV-Zeile eine Kostenart "
+               "geht. Das Blatt 'Spartenrechnung' summiert dann ueber diese Spalten.")
+    if leer or konstant:
+        teile = []
+        if konstant:
+            teile.append("in allen Zeilen gleich (" +
+                         "; ".join(f"{k} = {v}" for k, v in list(konstant.items())[:6]) +
+                         (" ..." if len(konstant) > 6 else "") + ")")
+        if leer:
+            teile.append(f"durchgehend leer ({', '.join(leer[:6])}"
+                         + (" ..." if len(leer) > 6 else "") + ")")
+        hinweis += (f"  |  Nicht abgebildet sind {len(leer) + len(konstant)} Spalten ohne "
+                    f"Informationsgehalt: " + " sowie ".join(teile) + ".")
+
+    ws, erste = _blatt_mit_daten(wb, "Daten_KPTM", df, hinweis)
     letzte = erste + len(df) - 1
     spalten = {str(c): get_column_letter(i) for i, c in enumerate(df.columns, start=1)}
     s_ka, s_pg = spalten["Kostenart"], spalten["Produktgruppe"]
@@ -164,19 +196,22 @@ def _kptm_blatt(wb, df, mapping, bereiche):
     wertart = mapping.get("kostenstellen_wertart", "ISWF")
     fracht = mapping.get("umbuchung_fracht_suffix", "0100")
 
-    pg_bereich, regel_bereich = bereiche
+    pg_bereich, regel_bereich, map_bereich = bereiche
+    # Ohne TEXT(...,"@"): die Kostenart steht in beiden Blaettern bereits als Text,
+    # die Umwandlung war wirkungslos und hat rund eine Million Zeichen Formeltext
+    # gekostet.
     for r in range(erste, letzte + 1):
         # Reihenfolge wie im Programm: Einzeleintrag, dann Kostenstelle, dann Auffangregel.
         ws.cell(row=r, column=basis + 1, value=(
-            f'=IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,2,FALSE),'
-            f'IF(AND(LEFT(TEXT({s_ka}{r},"@"),{len(prefix)})="{prefix}",'
+            f'=IFERROR(VLOOKUP({s_ka}{r},{map_bereich},2,FALSE),'
+            f'IF(AND(LEFT({s_ka}{r},{len(prefix)})="{prefix}",'
             f'{s_wa}{r}="{wertart}"),"fek",'
-            f'IFERROR(VLOOKUP(LEFT(TEXT({s_ka}{r},"@"),1),{regel_bereich},2,FALSE),"")))'))
+            f'IFERROR(VLOOKUP(LEFT({s_ka}{r},1),{regel_bereich},2,FALSE),"")))'))
         ws.cell(row=r, column=basis + 2, value=(
-            f'=IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,4,FALSE),'
-            f'IFERROR(VLOOKUP(LEFT(TEXT({s_ka}{r},"@"),1),{regel_bereich},3,FALSE),1))'))
+            f'=IFERROR(VLOOKUP({s_ka}{r},{map_bereich},4,FALSE),'
+            f'IFERROR(VLOOKUP(LEFT({s_ka}{r},1),{regel_bereich},3,FALSE),1))'))
         ws.cell(row=r, column=basis + 3, value=(
-            f'=IF(IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,5,FALSE),"")="fracht",'
+            f'=IF(IFERROR(VLOOKUP({s_ka}{r},{map_bereich},5,FALSE),"")="fracht",'
             f'IF(COUNTIF({pg_bereich},LEFT({s_pg}{r},2)&"{fracht}")>0,'
             f'LEFT({s_pg}{r},2)&"{fracht}",{s_pg}{r}),{s_pg}{r})'))
         z = ws.cell(row=r, column=basis + 4, value=f'={c_vz}{r}*{s_wert}{r}')
