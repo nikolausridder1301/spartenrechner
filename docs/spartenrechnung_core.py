@@ -246,9 +246,59 @@ def read_bwa_ergebnis(bwa_path, sheet_name):
     raise ValueError(f"Zeile 'Vorläufiges Ergebnis' nicht in Sheet '{sheet_name}' gefunden.")
 
 
+# Welche Spalten eine Datei tragen muss, und woran man sie erkennt, wenn die
+# falsche hochgeladen wurde. Ohne diese Pruefung quittiert das Tool eine
+# verwechselte Datei mit "KeyError: 'Kostenart'" - fuer den Anwender unbrauchbar.
+_PFLICHTSPALTEN = {
+    "KPTM": ["Kostenart", "Produktgruppe", "Wertart", "Wert/Menge"],
+    "PWBS": ["Rückmeldenummer", "Artikelnummer", "Offener Wert"],
+    "PFAK": ["RUECKMELDE_NR", "PRODUKTGRUPPE"],
+}
+
+
+def _pruefe_datei(df, art, pfad):
+    """Prueft eine eingelesene Datei auf Brauchbarkeit, bevor gerechnet wird."""
+    name = os.path.basename(str(pfad))
+    fehlend = [sp for sp in _PFLICHTSPALTEN[art] if sp not in df.columns]
+    if fehlend:
+        # Steckt vielleicht eine andere Exportart dahinter? Dann ist der Hinweis
+        # "Sie haben die falsche Datei hochgeladen" hilfreicher als eine Spaltenliste.
+        for andere, spalten in _PFLICHTSPALTEN.items():
+            if andere != art and all(sp in df.columns for sp in spalten):
+                raise ValueError(
+                    f"'{name}' sieht aus wie ein {andere}-Export, erwartet wird aber "
+                    f"{art}. Bitte die richtige Datei in das passende Feld laden."
+                )
+        raise ValueError(
+            f"In '{name}' fehlen die Spalten: {', '.join(fehlend)}. Erwartet wird ein "
+            f"{art}-Export mit den Spalten {', '.join(_PFLICHTSPALTEN[art])}. "
+            f"Gefunden wurden: {', '.join(str(c) for c in list(df.columns)[:8])} ..."
+        )
+    if df.empty:
+        raise ValueError(
+            f"'{name}' enthaelt keine Datenzeilen (nur die Kopfzeile). Das Ergebnis "
+            f"waere durchgaengig 0,00 - deshalb wird hier abgebrochen statt eine leere "
+            f"Rechnung auszugeben."
+        )
+    return df
+
+
 def load_kptm(path):
     df = pd.read_excel(path, sheet_name="Penta")
     df.columns = [c.strip() for c in df.columns]
+    _pruefe_datei(df, "KPTM", path)
+    # Zahlenspalte absichern: kommt sie als Text (z.B. mit Dezimalkomma), scheitert
+    # die Summierung sonst mitten in der Rechnung mit einer Typmeldung aus numpy.
+    if not pd.api.types.is_numeric_dtype(df["Wert/Menge"]):
+        umgewandelt = pd.to_numeric(
+            df["Wert/Menge"].astype(str).str.replace(".", "", regex=False)
+                            .str.replace(",", ".", regex=False), errors="coerce")
+        if umgewandelt.isna().all():
+            raise ValueError(
+                f"Die Spalte 'Wert/Menge' in '{os.path.basename(str(path))}' enthaelt "
+                f"keine lesbaren Zahlen. Bitte den Export ohne Textformatierung ziehen."
+            )
+        df["Wert/Menge"] = umgewandelt.fillna(0.0)
     df["Kostenart"] = df["Kostenart"].astype(str).str.strip()
     df["Produktgruppe"] = df["Produktgruppe"].astype(str).str.strip()
     df.loc[df["Produktgruppe"].isin(["nan", "None", ""]), "Produktgruppe"] = None
@@ -386,6 +436,7 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
     """
     df = pd.read_excel(pwbs_pfad, sheet_name="Penta")
     df.columns = [c.strip() for c in df.columns]
+    _pruefe_datei(df, "PWBS", pwbs_pfad)
     je_pg = {}
     zugeordnet = service = luecke = 0.0
     ueber_artikel = service_mit_quelle = 0.0
