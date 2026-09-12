@@ -125,12 +125,32 @@ function parameterStatusZeigen() {
   loeschen.style.display = "inline-block";
 }
 
+/* Nimmt Excel (bevorzugt, weil im Controlling gepflegt) ebenso wie die frueher
+   verwendete JSON-Datei. Excel wird beim Ablegen einmal nach JSON uebersetzt und
+   nur so gespeichert - localStorage haelt Text, keine Binaerdateien. */
 setupDropzone("dropzone-param", "dropzone-param-text", "file-param", async (file, zone, text) => {
-  const inhalt = await file.text();
+  const name = file.name.toLowerCase();
+  let inhalt;
   try {
-    JSON.parse(inhalt);
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      const ext = name.endsWith(".xls") ? ".xls" : ".xlsx";
+      pyodide.FS.writeFile("/param_upload" + ext, new Uint8Array(await file.arrayBuffer()));
+      inhalt = await pyodide.runPythonAsync(`
+import json
+json.dumps(spartenrechnung_core.betriebsparameter_aus_excel("/param_upload${ext}"))
+      `);
+    } else {
+      inhalt = await file.text();
+      JSON.parse(inhalt);
+    }
   } catch (e) {
-    showError(`„${file.name}" ist keine gültige JSON-Datei: ${e.message}`);
+    showError(`„${file.name}" konnte nicht gelesen werden: ${e.message || e}`);
+    return;
+  }
+  const geparst = JSON.parse(inhalt);
+  if (!geparst.anfangsbestand || !Object.keys(geparst.anfangsbestand).length) {
+    showError(`In „${file.name}" wurde kein Anfangsbestand gefunden. Erwartet werden `
+      + `die Spalten Sparte, Geschäftsjahr und Anfangsbestand.`);
     return;
   }
   try {
@@ -143,6 +163,25 @@ setupDropzone("dropzone-param", "dropzone-param-text", "file-param", async (file
   zone.classList.add("has-file");
   text.textContent = "✓ " + file.name;
   parameterStatusZeigen();
+});
+
+// Vorlage: wird im Browser erzeugt, damit keine Excel-Datei im Repository liegen muss.
+document.getElementById("param-vorlage").addEventListener("click", async (e) => {
+  e.preventDefault();
+  if (!pyodide) return;
+  const jahr = new Date().getFullYear();
+  await pyodide.runPythonAsync(`
+spartenrechnung_core.schreibe_betriebsparameter_excel(
+    {"${jahr}": {"DP0001": 0.0, "PB0001": 0.0}}, "/vorlage.xlsx")
+  `);
+  const bytes = pyodide.FS.readFile("/vorlage.xlsx");
+  const url = URL.createObjectURL(new Blob([bytes],
+    { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "betriebsparameter_vorlage.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
 });
 
 document.getElementById("param-loeschen").addEventListener("click", () => {
@@ -374,19 +413,13 @@ function showResult(summary, url, filename) {
     // Stichtag auf den 01.01., ist es die Jahreskonstante des naechsten Jahres -
     // dann muss sie nicht von Hand gepflegt werden, sondern faellt hier heraus.
     if (stat.bestand_stichtag && Object.keys(stat.bestand_stichtag).length) {
-      const inhalt = JSON.stringify(
-        { _hinweis: `Werkstattbestand je Sparte zum Stichtag "${summary.zeitraum || ""}", `
-            + "erzeugt vom Spartenrechner. Als Anfangsbestand des Folgejahres verwendbar, "
-            + "wenn der Stichtag der 01.01. ist.",
-          anfangsbestand: { "JAHR_EINTRAGEN": stat.bestand_stichtag } }, null, 2);
-      const paramUrl = URL.createObjectURL(new Blob([inhalt], { type: "application/json" }));
       html += `<details class="zuordnung"><summary>Werkstattbestand als Betriebsparameter sichern</summary>`;
       html += `<p class="hinweis">Der hier errechnete Bestand ist zugleich der
         <strong>Anfangsbestand der Folgeperiode</strong>. Wenn Sie den Abschluss zum
         <strong>01.01.</strong> rechnen, ist das die Jahreskonstante des neuen Jahres –
-        speichern, Jahreszahl eintragen, fertig. Dann muss nichts von Hand gepflegt werden.</p>`;
-      html += `<a class="download-btn" style="margin-top:0" href="${paramUrl}"
-        download="betriebsparameter_neu.json">⬇ betriebsparameter_neu.json</a></details>`;
+        speichern, Jahreszahl in der Tabelle prüfen, fertig. Dann muss nichts von Hand
+        gepflegt werden.</p>`;
+      html += `<button type="button" id="param-sichern">⬇ betriebsparameter.xlsx</button></details>`;
     }
 
     if (stat.offene_auftraege && stat.offene_auftraege.length) {
@@ -437,6 +470,29 @@ function showResult(summary, url, filename) {
 
   resultBox.innerHTML = html;
   resultBox.style.display = "block";
+
+  const sichernBtn = document.getElementById("param-sichern");
+  if (sichernBtn) {
+    sichernBtn.addEventListener("click", async () => {
+      // Jahr aus dem Zeitraum-Text; der Stichtag 01.01. gehoert zum Folgejahr.
+      const treffer = String(summary.zeitraum || "").match(/20\d{2}/g);
+      const jahr = treffer ? treffer[treffer.length - 1] : new Date().getFullYear();
+      const werte = JSON.stringify({ [String(jahr)]: summary.ufe_statistik.bestand_stichtag });
+      await pyodide.runPythonAsync(`
+import json
+spartenrechnung_core.schreibe_betriebsparameter_excel(
+    json.loads(${JSON.stringify(werte)}), "/betriebsparameter_neu.xlsx")
+      `);
+      const bytes = pyodide.FS.readFile("/betriebsparameter_neu.xlsx");
+      const url = URL.createObjectURL(new Blob([bytes],
+        { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "betriebsparameter.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
 
   const neuBtn = document.getElementById("neu-berechnen");
   if (neuBtn) {

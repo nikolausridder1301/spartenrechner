@@ -128,8 +128,9 @@ Von Hand pflegen muss man ihn trotzdem nicht:
    laden Sie den PWBS-Export mit diesem Stichtag im Feld „Periodenbeginn" hoch.
    Es ist derselbe Report wie der monatliche, nur mit anderem Datum.
 2. Das Tool zeigt danach unter **„Werkstattbestand als Betriebsparameter sichern"**
-   den errechneten Bestand als fertige Datei an. Einmal speichern – damit sind die
-   restlichen elf Monate versorgt, ohne die Datei jedes Mal mitzuladen.
+   den errechneten Bestand als fertige **Excel-Tabelle** an (Spalten: Sparte,
+   Geschäftsjahr, Anfangsbestand). Einmal speichern – damit sind die restlichen elf
+   Monate versorgt, ohne die Datei jedes Mal mitzuladen.
 
 Geprüft: Der so ausgegebene Bestand ist als Anfangsbestand der Folgeperiode
 centgenau verwendbar (`UFE(Jan–Jun) = UFE(Q1) + [Bestand(01.07.) − Bestand(01.04.)]`,
@@ -179,11 +180,10 @@ docs/                            Weboberfläche (GitHub Pages) – Kernlogik + U
 scripts/spartenrechnung.py       CLI-Wrapper um dieselbe Kernlogik
 scripts/validate.py              zellgenauer Abgleich gegen eine manuelle Referenz
 config/                          Mapping-Tabellen (Kostenart→Zeile, Produktgruppen)
-  betriebsparameter.beispiel.json  Vorlage für Stundensatz + Anfangsbestände
 
 intern/                          ← eigenes, PRIVATES Repository (nicht hier drin)
   HERLEITUNG.md                    Herleitung jeder Zeile inkl. Belegen
-  betriebsparameter.json           Stundensatz + Anfangsbestände (echte Werte)
+  betriebsparameter.xlsx           Anfangsbestände je Sparte (echte Werte)
 rohdaten/ referenz/ output/      lokal, nicht versioniert
 ```
 

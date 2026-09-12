@@ -116,13 +116,14 @@
             <span id="parameter-status" class="param-badge">nicht hinterlegt</span></label>
           <p class="hinweis">
             Statt den 01.01.-Export jedes Mal mitzuladen, kann der Anfangsbestand einmal
-            hinterlegt werden – Ihr Browser merkt ihn sich, er verlässt den Rechner nicht
-            und steht in keinem Repository.
-            <a href="config/betriebsparameter.beispiel.json" download>Vorlage ansehen</a>
+            hinterlegt werden – als <strong>Excel-Tabelle</strong> mit den Spalten Sparte,
+            Geschäftsjahr und Anfangsbestand. Ihr Browser merkt sie sich, sie verlässt den
+            Rechner nicht und steht in keinem Repository.
+            <a href="#" id="param-vorlage">Excel-Vorlage herunterladen</a>
           </p>
           <div class="dropzone" id="dropzone-param">
-            <span id="dropzone-param-text">betriebsparameter.json auswählen</span>
-            <input type="file" id="file-param" accept=".json" hidden>
+            <span id="dropzone-param-text">betriebsparameter.xlsx auswählen</span>
+            <input type="file" id="file-param" accept=".xlsx,.xls,.json" hidden>
           </div>
           <button type="button" id="param-loeschen" style="display:none;">Hinterlegte Parameter löschen</button>
         </div>

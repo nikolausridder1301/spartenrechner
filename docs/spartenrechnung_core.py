@@ -87,15 +87,115 @@ def lade_betriebsparameter(config_dir):
     Weboberflaeche die Datei ins virtuelle Dateisystem) und daneben in 'intern/'
     (dort liegt das private Repository, wenn lokal per Kommandozeile gearbeitet wird).
     """
-    kandidaten = [
-        os.path.join(config_dir, "betriebsparameter.json"),
-        os.path.join(config_dir, os.pardir, "intern", "betriebsparameter.json"),
-    ]
-    for pfad in kandidaten:
-        if os.path.exists(pfad):
-            with open(pfad, encoding="utf-8") as f:
-                return json.load(f)
+    namen = ["betriebsparameter.xlsx", "betriebsparameter.xls", "betriebsparameter.json"]
+    orte = [config_dir, os.path.join(config_dir, os.pardir, "intern")]
+    for ort in orte:
+        for name in namen:
+            pfad = os.path.join(ort, name)
+            if not os.path.exists(pfad):
+                continue
+            if name.endswith(".json"):
+                with open(pfad, encoding="utf-8") as f:
+                    return json.load(f)
+            return betriebsparameter_aus_excel(pfad)
     return {}
+
+
+# Spaltenueberschriften, die als Sparte/Jahr/Wert erkannt werden. Bewusst grosszuegig:
+# die Datei wird von Hand in Excel gepflegt, da heisst es mal "Sparte", mal "Produktgruppe".
+_SPALTEN_SPARTE = {"sparte", "produktgruppe", "kostenobjekt", "pg"}
+_SPALTEN_JAHR = {"geschaftsjahr", "geschaeftsjahr", "jahr"}
+_SPALTEN_WERT = {"anfangsbestand", "werkstattbestand", "wert", "betrag", "eur"}
+
+
+def _spalte_finden(spalten, erlaubt):
+    for s in spalten:
+        norm = str(s).strip().lower().replace("ä", "a").replace("ö", "o").replace("ü", "u")
+        norm = norm.replace("ß", "ss").replace(" ", "").replace("(eur)", "").replace(".", "")
+        if norm in erlaubt:
+            return s
+    return None
+
+
+def betriebsparameter_aus_excel(pfad):
+    """Liest die Betriebsparameter aus einer Excel-Datei.
+
+    Erwartet ein Blatt mit den Spalten Sparte | Geschaeftsjahr | Anfangsbestand.
+    Excel statt JSON, weil diese Datei im Controlling gepflegt wird und nicht von
+    Entwicklern - eine Tabelle laesst sich dort oeffnen, pruefen und ergaenzen.
+
+    Die Spaltennamen werden grosszuegig erkannt (Sparte/Produktgruppe, Jahr/
+    Geschaeftsjahr, Anfangsbestand/Wert/Betrag). Fehlt die Jahresspalte, gilt die
+    Datei fuer alle Jahre - dann traegt der Aufrufer die Verantwortung dafuer, dass
+    sie zur Auswertung passt.
+    """
+    warnings.filterwarnings("ignore")
+    # Die Kopfzeile wird gesucht, nicht vorausgesetzt: eine von Hand gepflegte Tabelle
+    # traegt haeufig eine Titelzeile oder eine Leerzeile darueber.
+    roh = sp_sparte = sp_wert = sp_jahr = None
+    for kopfzeile in range(0, 10):
+        kandidat = pd.read_excel(pfad, sheet_name=0, header=kopfzeile)
+        kandidat.columns = [str(c).strip() for c in kandidat.columns]
+        s = _spalte_finden(kandidat.columns, _SPALTEN_SPARTE)
+        w = _spalte_finden(kandidat.columns, _SPALTEN_WERT)
+        if s is not None and w is not None:
+            roh, sp_sparte, sp_wert = kandidat, s, w
+            sp_jahr = _spalte_finden(kandidat.columns, _SPALTEN_JAHR)
+            break
+    if roh is None:
+        gefunden = pd.read_excel(pfad, sheet_name=0, nrows=5)
+        raise ValueError(
+            "Die Betriebsparameter-Datei braucht die Spalten 'Sparte' und 'Anfangsbestand' "
+            f"(in einer der ersten zehn Zeilen). Gefunden wurde: {list(gefunden.columns)[:6]}"
+        )
+
+    anfangsbestand = {}
+    for _, zeile in roh.iterrows():
+        sparte = _schluessel(zeile[sp_sparte])
+        if not sparte:
+            continue
+        try:
+            wert = float(zeile[sp_wert])
+        except (TypeError, ValueError):
+            continue
+        if pd.isna(wert):
+            continue
+        jahr = "alle"
+        if sp_jahr is not None and not pd.isna(zeile[sp_jahr]):
+            jahr = str(int(zeile[sp_jahr]))
+        anfangsbestand.setdefault(jahr, {})[sparte] = round(wert, 2)
+    return {"anfangsbestand": anfangsbestand}
+
+
+def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path):
+    """Schreibt die Betriebsparameter als Excel-Datei - dasselbe Format, das
+    betriebsparameter_aus_excel wieder einliest."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Betriebsparameter"
+    ws["A1"] = "Werkstattbestand je Sparte zum 01.01. (Anfangsbestand für die Zeile Bestandsveränderung UFE)"
+    ws["A1"].font = FONT_BOLD
+    kopf = ["Sparte", "Geschäftsjahr", "Anfangsbestand"]
+    for i, titel in enumerate(kopf, start=1):
+        z = ws.cell(row=3, column=i, value=titel)
+        z.font = FONT_HEADER
+        z.fill = FILL_HEADER
+        z.border = BORDER
+    r = 4
+    for jahr, werte in sorted(anfangsbestand_je_jahr.items()):
+        for sparte, wert in sorted(werte.items()):
+            ws.cell(row=r, column=1, value=sparte).border = BORDER
+            ws.cell(row=r, column=2, value=int(jahr) if str(jahr).isdigit() else jahr).border = BORDER
+            z = ws.cell(row=r, column=3, value=float(wert))
+            z.number_format = "#,##0.00"
+            z.border = BORDER
+            r += 1
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["C"].width = 18
+    ws.freeze_panes = "A4"
+    wb.save(out_path)
+    return out_path
 
 
 def load_config(config_dir):
@@ -175,10 +275,15 @@ def geschaeftsjahr(df, zeitraum=None):
 
 
 def lade_anfangsbestand(config_dir, jahr):
-    """Laedt den Werkstattbestand zum Jahresanfang aus den Betriebsparametern."""
-    if not jahr:
-        return None
-    return lade_betriebsparameter(config_dir).get("anfangsbestand", {}).get(str(jahr))
+    """Laedt den Werkstattbestand zum Jahresanfang aus den Betriebsparametern.
+
+    Traegt die Datei keine Jahresspalte, liegen die Werte unter 'alle' und gelten
+    unabhaengig vom Geschaeftsjahr.
+    """
+    je_jahr = lade_betriebsparameter(config_dir).get("anfangsbestand", {})
+    if jahr and str(jahr) in je_jahr:
+        return je_jahr[str(jahr)]
+    return je_jahr.get("alle")
 
 
 def _schluessel(x):

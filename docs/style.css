@@ -369,7 +369,8 @@ button[type="submit"]:disabled { background: #a9b0bd; cursor: not-allowed; }
   min-width: 6.5rem;
 }
 
-#neu-berechnen {
+#neu-berechnen,
+#param-sichern {
   padding: 0.6rem 1rem;
   background: var(--accent);
   color: #fff;
@@ -381,7 +382,8 @@ button[type="submit"]:disabled { background: #a9b0bd; cursor: not-allowed; }
   cursor: pointer;
 }
 
-#neu-berechnen:hover:not(:disabled) { background: #1e50a8; }
+#neu-berechnen:hover:not(:disabled),
+#param-sichern:hover { background: #1e50a8; }
 #neu-berechnen:disabled { background: #a9b0bd; cursor: not-allowed; }
 
 .legend { margin-top: 1.1rem; font-size: 0.8rem; color: var(--text-muted); }
