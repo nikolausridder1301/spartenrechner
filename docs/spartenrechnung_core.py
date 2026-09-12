@@ -939,6 +939,11 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
                      "nach_auftrag": nach_auftrag,
                      "nach_artikel": nach_artikel,
                      "anfangsbestand": gespeicherter_ab,
+                     "manuelle_zuordnung": manuelle_zuordnung,
+                     # Nur wenn die Zeile tatsaechlich gerechnet wurde, darf in der
+                     # Mappe eine Formel stehen. Sonst zeigte sie eine Zahl, die das
+                     # Tool bewusst zurueckhaelt, weil die Zuordnungsluecke zu gross ist.
+                     "ufe_berechnet": bool(pwbs_ende and not ufe_warnungen),
                  })
 
     known_pg = set(pg_config["reihenfolge"])

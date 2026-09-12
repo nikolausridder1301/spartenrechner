@@ -162,37 +162,43 @@ def _kptm_blatt(wb, df, mapping, pg_liste):
             "zeile": c_zeile, "ziel": c_ziel, "betrag": c_betrag}
 
 
-def _pwbs_blatt(wb, pfad, titel, nach_auftrag, nach_artikel, hinweis):
-    """Werkstattbestand mit nachschlagbarer Sparten-Zuordnung je Auftrag."""
-    from spartenrechnung_core import _schluessel
+def _pwbs_blatt(wb, pfad, titel, hinweis):
+    """Werkstattbestand, bei dem die Sparte per INDEX/VERGLEICH ermittelt wird.
+
+    Die Zuordnung ist damit nicht das Ergebnis eines unsichtbaren Programmschritts,
+    sondern in der Zelle selbst nachlesbar. Sie bildet die Logik des Programms genau
+    ab, in dieser Reihenfolge:
+      1. keine Artikelnummer -> Serviceauftrag, zaehlt gar nicht mit (Monteureinsatz,
+         Inbetriebnahme, Schulung: es wird nichts gefertigt)
+      2. Treffer ueber die Auftragsnummer in 'Zuordnung_Auftraege'
+      3. sonst Treffer ueber die Artikelnummer in 'Zuordnung_Artikel'
+      4. sonst nicht zuordenbar
+    """
     roh = pd.read_excel(pfad, sheet_name="Penta")
     roh.columns = [str(c).strip() for c in roh.columns]
-    zuordnung, quelle = [], []
-    for _, zeile in roh.iterrows():
-        art = _schluessel(zeile.get("Artikelnummer"))
-        if not art:
-            zuordnung.append("(Serviceauftrag)")
-            quelle.append("ohne Artikelnummer - zaehlt nicht zum Werkstattbestand")
-            continue
-        auf = _schluessel(zeile.get("Rückmeldenummer"))
-        if auf and auf in nach_auftrag:
-            zuordnung.append(nach_auftrag[auf])
-            quelle.append("ueber Auftragsnummer")
-        elif art in nach_artikel:
-            zuordnung.append(nach_artikel[art])
-            quelle.append("ueber Artikelnummer (eindeutig)")
-        else:
-            zuordnung.append("")
-            quelle.append("nicht zuordenbar")
-    roh["Sparte (zugeordnet)"] = zuordnung
-    roh["Quelle der Zuordnung"] = quelle
     ws, erste = _blatt_mit_daten(wb, titel, roh, hinweis)
-    breite = len(roh.columns)
-    for k in (breite - 1, breite):
-        ws.cell(row=erste - 1, column=k).fill = FILL_HILFS
-        ws.column_dimensions[get_column_letter(k)].width = 24
-    ws.auto_filter.ref = f"A{erste - 1}:{get_column_letter(breite)}{erste + len(roh) - 1}"
-    return ws
+    letzte = erste + len(roh) - 1
+    spalten = {str(c): get_column_letter(i) for i, c in enumerate(roh.columns, start=1)}
+    s_rm, s_art = spalten["Rückmeldenummer"], spalten["Artikelnummer"]
+    s_wert = spalten["Offener Wert"]
+
+    kopf = erste - 1
+    c_sparte = get_column_letter(len(roh.columns) + 1)
+    z = ws.cell(row=kopf, column=len(roh.columns) + 1, value="Sparte (Formel)")
+    z.font = Font(bold=True)
+    z.fill = FILL_HILFS
+    for r in range(erste, letzte + 1):
+        ws.cell(row=r, column=len(roh.columns) + 1, value=(
+            f'=IF({s_art}{r}="","(Serviceauftrag)",'
+            f'IFERROR(INDEX(Zuordnung_Auftraege!$B:$B,'
+            f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung_Auftraege!$A:$A,0)),'
+            f'IFERROR(INDEX(Zuordnung_Artikel!$B:$B,'
+            f'MATCH(TEXT({s_art}{r},"@"),Zuordnung_Artikel!$A:$A,0)),'
+            f'"(nicht zuordenbar)")))'))
+    ws.column_dimensions[c_sparte].width = 20
+    ws.auto_filter.ref = f"A{kopf}:{c_sparte}{letzte}"
+    return {"blatt": titel, "erste": erste, "letzte": letzte,
+            "sparte": c_sparte, "wert": s_wert}
 
 
 def _kontrollblatt(wb, result, produktgruppen):
@@ -216,7 +222,8 @@ def _kontrollblatt(wb, result, produktgruppen):
 
 def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
                           pwbs_ende=None, pwbs_anfang=None, nach_auftrag=None,
-                          nach_artikel=None, anfangsbestand=None):
+                          nach_artikel=None, anfangsbestand=None,
+                          manuelle_zuordnung=None, ufe_berechnet=False):
     """Haengt an eine bestehende Mappe die Datenblaetter an und ersetzt die Werte
     im Blatt 'Spartenrechnung' durch Formeln, die auf diese Blaetter zeigen.
 
@@ -225,42 +232,67 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
     _, pg_liste = _mapping_blatt(wb, mapping, produktgruppen)
     kptm = _kptm_blatt(wb, kptm_df, mapping, pg_liste)
 
-    if pwbs_ende:
-        _pwbs_blatt(wb, pwbs_ende, "Daten_PWBS_Ende", nach_auftrag or {}, nach_artikel or {},
-                    "Werkstattbestand zum Stichtag. Die Spalte 'Offener Wert' je Sparte "
-                    "ergibt den Endbestand; die Differenz zum Anfangsbestand ist die Zeile "
-                    "'Bestandsveraenderung UFE'. Serviceauftraege (ohne Artikelnummer) "
-                    "zaehlen bewusst nicht mit.")
-    if pwbs_anfang:
-        _pwbs_blatt(wb, pwbs_anfang, "Daten_PWBS_Anfang", nach_auftrag or {}, nach_artikel or {},
-                    "Werkstattbestand zum Periodenbeginn (01.01.).")
-
+    # Die beiden Nachschlagetabellen muessen VOR den PWBS-Blaettern stehen,
+    # weil deren Sparten-Formel hier hineinschlaegt.
     if nach_auftrag:
-        df_z = pd.DataFrame(
-            [{"Fertigungsauftrag": a, "Sparte": p} for a, p in sorted(nach_auftrag.items())])
+        eintraege = dict(nach_auftrag)
+        quelle = {a: "Auftragsnummer (KPTM/PFAK)" for a in eintraege}
+        for a, pg in (manuelle_zuordnung or {}).items():
+            eintraege[a] = pg          # Handzuordnung hat Vorrang
+            quelle[a] = "von Hand zugeordnet"
+        df_z = pd.DataFrame([{"Fertigungsauftrag": a, "Sparte": p, "Quelle": quelle[a]}
+                             for a, p in sorted(eintraege.items())])
         ws, _ = _blatt_mit_daten(
             wb, "Zuordnung_Auftraege", df_z,
             "Welcher Fertigungsauftrag zu welcher Sparte gehoert. Gewonnen aus der Spalte "
-            "'Kostenobjekt' des KPTM-Exports und aus 'RUECKMELDE_NR' der PFAK-Datei; wo "
-            "beide Quellen etwas wissen, stimmen sie ueberein. Das Blatt 'Daten_PWBS_Ende' "
-            "schlaegt hier nach.")
-        ws.column_dimensions["A"].width = 20
+            "'Kostenobjekt' des KPTM-Exports und aus 'RUECKMELDE_NR' der PFAK-Datei; wo beide "
+            "Quellen etwas wissen, stimmen sie ueberein. Von Hand vorgenommene Zuordnungen "
+            "haben Vorrang und sind in der Spalte 'Quelle' als solche gekennzeichnet. "
+            "Die Blaetter 'Daten_PWBS_*' schlagen hier nach.")
+        for sp, br in (("A", 20), ("B", 12), ("C", 26)):
+            ws.column_dimensions[sp].width = br
+
+    if nach_artikel:
+        df_a = pd.DataFrame([{"Artikelnummer": a, "Sparte": p}
+                             for a, p in sorted(nach_artikel.items())])
+        ws, _ = _blatt_mit_daten(
+            wb, "Zuordnung_Artikel", df_a,
+            "Ersatzschluessel: Artikelnummern, die eindeutig zu genau einer Sparte gehoeren. "
+            "Wird nur herangezogen, wenn die Auftragsnummer keinen Treffer liefert.")
+        ws.column_dimensions["A"].width = 16
         ws.column_dimensions["B"].width = 12
 
+    pwbs_e = pwbs_a = None
+    if pwbs_ende:
+        pwbs_e = _pwbs_blatt(
+            wb, pwbs_ende, "Daten_PWBS_Ende",
+            "Werkstattbestand zum Stichtag. Massgeblich ist die Spalte 'Offener Wert'. "
+            "Die gelbe Spalte rechts ermittelt die Sparte per INDEX/VERGLEICH - erst ueber "
+            "die Auftragsnummer, ersatzweise ueber die Artikelnummer. Serviceauftraege "
+            "(ohne Artikelnummer) zaehlen bewusst nicht mit.")
+    if pwbs_anfang:
+        pwbs_a = _pwbs_blatt(
+            wb, pwbs_anfang, "Daten_PWBS_Anfang",
+            "Werkstattbestand zum Periodenbeginn (01.01.), gleiche Systematik wie das "
+            "Blatt 'Daten_PWBS_Ende'.")
+
     if anfangsbestand:
-        df_a = pd.DataFrame([{"Sparte": p, "Anfangsbestand": v}
+        df_b = pd.DataFrame([{"Sparte": p, "Anfangsbestand": v}
                              for p, v in sorted(anfangsbestand.items())])
         ws, erste = _blatt_mit_daten(
-            wb, "Betriebsparameter", df_a,
+            wb, "Betriebsparameter", df_b,
             "Werkstattbestand je Sparte zum 01.01. Grundlage der Zeile "
             "'Bestandsveraenderung UFE': UFE = Bestand(Stichtag) - Anfangsbestand.")
         ws.column_dimensions["A"].width = 12
         ws.column_dimensions["B"].width = 18
-        for r in range(erste, erste + len(df_a)):
+        for r in range(erste, erste + len(df_b)):
             ws.cell(row=r, column=2).number_format = "#,##0.00"
 
     kontrolle = _kontrollblatt(wb, result, produktgruppen)
-    anzahl = _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontrolle)
+    anzahl = _verformele_spartenrechnung(
+        wb, result, mapping, produktgruppen, kptm, kontrolle,
+        pwbs_e=pwbs_e, pwbs_a=pwbs_a,
+        anfangsbestand_blatt=bool(anfangsbestand), ufe_berechnet=ufe_berechnet)
 
     if "Hinweise" in wb.sheetnames:
         ws = wb["Hinweise"]
@@ -275,17 +307,17 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "'Daten_KPTM'.",
             "                      Dazu alle Zwischensummen (Betriebsleistung, Rohmarge I, DB I-III).",
             "",
+            "  Bestandsveraenderung UFE hat ebenfalls eine Formel:",
+            "    = Bestand(Stichtag) aus 'Daten_PWBS_Ende' minus Anfangsbestand.",
+            "    Die Sparte je Auftrag ermittelt dort eine INDEX/VERGLEICH-Formel - erst ueber die",
+            "    Auftragsnummer ('Zuordnung_Auftraege'), ersatzweise ueber die Artikelnummer",
+            "    ('Zuordnung_Artikel'). Auftraege ohne Artikelnummer sind Serviceauftraege und",
+            "    zaehlen nicht mit.",
+            "",
             "  Zeilen OHNE Formel - und warum:",
-            "    Bestandsveraenderung UFE   entsteht aus zwei Werkstattbestaenden und einer "
-            "Zuordnung ueber",
-            "                               mehrere Quellen. Die Bestandteile stehen in "
-            "'Daten_PWBS_Ende',",
-            "                               'Zuordnung_Auftraege' und 'Betriebsparameter'; eine "
-            "einzelne Formel",
-            "                               wuerde diesen Weg eher verschleiern als zeigen.",
-            "    Die drei Deckungsdifferenzen  stammen aus dem BAB, nicht aus diesen Exporten. "
-            "Sie sind hier",
-            "                               leer und von Hand zu ergaenzen.",
+            "    Die drei Deckungsdifferenzen  stammen aus dem BAB, nicht aus diesen Exporten.",
+            "                               Sie sind hier leer und von Hand zu ergaenzen.",
+            "    Sonderposten               bewusste Einzelfall-Entscheidung je Periode.",
             "",
             "  Selbstpruefung: Oben links im Blatt 'Spartenrechnung' steht die groesste "
             "Abweichung zwischen",
@@ -297,7 +329,9 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
     return anzahl
 
 
-def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontrolle):
+def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontrolle,
+                                pwbs_e=None, pwbs_a=None, anfangsbestand_blatt=False,
+                                ufe_berechnet=False):
     """Ersetzt die Zahlen im Blatt 'Spartenrechnung' durch Formeln auf die Rohdaten."""
     ws = wb["Spartenrechnung"]
 
@@ -345,6 +379,25 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
             if key in KPTM_ZEILEN:
                 formel = (f'=SUMIFS({bereich_betrag},{bereich_zeile},"{key}",'
                           f'{bereich_ziel},{spalte}${kopfzeile})')
+            elif key == "bestand_ufe" and ufe_berechnet and pwbs_e:
+                # UFE = Bestand(Stichtag) - Anfangsbestand. Der Anfangsbestand kommt
+                # entweder aus einem zweiten Werkstattbestand oder aus den hinterlegten
+                # Betriebsparametern - je nachdem, was vorliegt.
+                ende = (f"SUMIFS('{pwbs_e['blatt']}'!${pwbs_e['wert']}${pwbs_e['erste']}:"
+                        f"${pwbs_e['wert']}${pwbs_e['letzte']},"
+                        f"'{pwbs_e['blatt']}'!${pwbs_e['sparte']}${pwbs_e['erste']}:"
+                        f"${pwbs_e['sparte']}${pwbs_e['letzte']},{spalte}${kopfzeile})")
+                if pwbs_a:
+                    anfang = (f"SUMIFS('{pwbs_a['blatt']}'!${pwbs_a['wert']}${pwbs_a['erste']}:"
+                              f"${pwbs_a['wert']}${pwbs_a['letzte']},"
+                              f"'{pwbs_a['blatt']}'!${pwbs_a['sparte']}${pwbs_a['erste']}:"
+                              f"${pwbs_a['sparte']}${pwbs_a['letzte']},{spalte}${kopfzeile})")
+                elif anfangsbestand_blatt:
+                    anfang = (f"SUMIFS(Betriebsparameter!$B:$B,Betriebsparameter!$A:$A,"
+                              f"{spalte}${kopfzeile})")
+                else:
+                    continue
+                formel = f"={ende}-{anfang}"
             elif key in ABGELEITET:
                 plus, minus = ABGELEITET[key]
                 teile = [f"{spalte}{zeilen_nr[k]}" for k in plus if k in zeilen_nr]
