@@ -16,7 +16,11 @@ Aufbau der erzeugten Mappe:
                            Quelle der Hilfsspalten, hier nachschlagbar
     Daten_PWBS_Ende        Werkstattbestand zum Stichtag, mit Sparten-Zuordnung
     Daten_PWBS_Anfang      dito zum Periodenbeginn, falls hochgeladen
-    Zuordnung_Auftraege    Fertigungsauftrag -> Sparte samt Quelle der Zuordnung
+    Zuordnung              Fertigungsauftrag -> Sparte UND Artikelnummer -> Sparte
+                           (Ersatzschluessel), gemeinsam. Keine Kopie einer
+                           hochgeladenen Datei, sondern eine aus KPTM + PFAK + evtl.
+                           Handzuordnung zusammengefuehrte Tabelle - deshalb ein
+                           eigenes Blatt statt einer Spalte in den Rohdaten
     Betriebsparameter      Anfangsbestaende je Sparte
     Kontrolle              die von Python gerechneten Werte. Die Spartenrechnung
                            zeigt oben die groesste Abweichung zwischen Formel und
@@ -185,6 +189,50 @@ def _kptm_blatt(wb, df, mapping, bereiche):
             "zeile": c_zeile, "ziel": c_ziel, "betrag": c_betrag}
 
 
+def _zuordnung_blatt(wb, nach_auftrag, nach_artikel, manuelle_zuordnung=None):
+    """Ein gemeinsames Blatt fuer beide Zuordnungstabellen.
+
+    Beide sind keine Kopie einer hochgeladenen Datei, sondern aus KPTM + PFAK (und
+    evtl. Handzuordnung) zusammengefuehrte Nachschlagetabellen - deshalb ein eigenes
+    Blatt statt einer Spalte in den Rohdaten. Zwei Tabellen statt zwei Blaetter, weil
+    sie demselben Zweck dienen (Sparte zu einem Schluessel finden) und nur die
+    Zuordnungslogik es rechtfertigt, sie ueberhaupt auszulagern - nicht ihre Groesse.
+    """
+    ws = wb.create_sheet("Zuordnung")
+    ws.cell(row=1, column=1, value=(
+        "Wie Fertigungsauftraege und Artikelnummern einer Sparte zugeordnet werden. "
+        "Keine Kopie einer hochgeladenen Datei: beide Tabellen fuehren KPTM- und "
+        "PFAK-Angaben zusammen. Die Blaetter 'Daten_PWBS_*' schlagen hier nach."
+    )).font = Font(italic=True, size=9)
+
+    ws.cell(row=2, column=1, value="Fertigungsauftrag → Sparte").font = Font(bold=True, size=9)
+    for j, titel in enumerate(["Fertigungsauftrag", "Sparte", "Quelle"], start=1):
+        z = ws.cell(row=3, column=j, value=titel)
+        z.font, z.fill = FONT_WEISS, FILL_DATEN
+    eintraege = dict(nach_auftrag or {})
+    quelle = {a: "Auftragsnummer (KPTM/PFAK)" for a in eintraege}
+    for a, pg in (manuelle_zuordnung or {}).items():
+        eintraege[a] = pg          # Handzuordnung hat Vorrang
+        quelle[a] = "von Hand zugeordnet"
+    for i, (a, pg) in enumerate(sorted(eintraege.items()), start=4):
+        ws.cell(row=i, column=1, value=a)
+        ws.cell(row=i, column=2, value=pg)
+        ws.cell(row=i, column=3, value=quelle[a])
+
+    ws.cell(row=2, column=5, value="Artikelnummer → Sparte (Ersatzschlüssel)").font = Font(
+        bold=True, size=9)
+    for j, titel in ((5, "Artikelnummer"), (6, "Sparte")):
+        z = ws.cell(row=3, column=j, value=titel)
+        z.font, z.fill = FONT_WEISS, FILL_DATEN
+    for i, (a, pg) in enumerate(sorted((nach_artikel or {}).items()), start=4):
+        ws.cell(row=i, column=5, value=a)
+        ws.cell(row=i, column=6, value=pg)
+
+    ws.freeze_panes = "A4"
+    for sp, br in (("A", 20), ("B", 12), ("C", 26), ("D", 3), ("E", 22), ("F", 12)):
+        ws.column_dimensions[sp].width = br
+
+
 def _pwbs_blatt(wb, pfad, titel, hinweis):
     """Werkstattbestand, bei dem die Sparte per INDEX/VERGLEICH ermittelt wird.
 
@@ -193,8 +241,8 @@ def _pwbs_blatt(wb, pfad, titel, hinweis):
     ab, in dieser Reihenfolge:
       1. keine Artikelnummer -> Serviceauftrag, zaehlt gar nicht mit (Monteureinsatz,
          Inbetriebnahme, Schulung: es wird nichts gefertigt)
-      2. Treffer ueber die Auftragsnummer in 'Zuordnung_Auftraege'
-      3. sonst Treffer ueber die Artikelnummer in 'Zuordnung_Artikel'
+      2. Treffer ueber die Auftragsnummer im Blatt 'Zuordnung' (Tabelle links)
+      3. sonst Treffer ueber die Artikelnummer im Blatt 'Zuordnung' (Tabelle rechts)
       4. sonst nicht zuordenbar
     """
     roh = pd.read_excel(pfad, sheet_name="Penta")
@@ -213,10 +261,10 @@ def _pwbs_blatt(wb, pfad, titel, hinweis):
     for r in range(erste, letzte + 1):
         ws.cell(row=r, column=len(roh.columns) + 1, value=(
             f'=IF({s_art}{r}="","(Serviceauftrag)",'
-            f'IFERROR(INDEX(Zuordnung_Auftraege!$B:$B,'
-            f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung_Auftraege!$A:$A,0)),'
-            f'IFERROR(INDEX(Zuordnung_Artikel!$B:$B,'
-            f'MATCH(TEXT({s_art}{r},"@"),Zuordnung_Artikel!$A:$A,0)),'
+            f'IFERROR(INDEX(Zuordnung!$B:$B,'
+            f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung!$A:$A,0)),'
+            f'IFERROR(INDEX(Zuordnung!$F:$F,'
+            f'MATCH(TEXT({s_art}{r},"@"),Zuordnung!$E:$E,0)),'
             f'"(nicht zuordenbar)")))'))
     ws.column_dimensions[c_sparte].width = 20
     ws.auto_filter.ref = f"A{kopf}:{c_sparte}{letzte}"
@@ -255,35 +303,9 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
     _, bereiche = _mapping_blatt(wb, mapping, produktgruppen)
     kptm = _kptm_blatt(wb, kptm_df, mapping, bereiche)
 
-    # Die beiden Nachschlagetabellen muessen VOR den PWBS-Blaettern stehen,
-    # weil deren Sparten-Formel hier hineinschlaegt.
-    if nach_auftrag:
-        eintraege = dict(nach_auftrag)
-        quelle = {a: "Auftragsnummer (KPTM/PFAK)" for a in eintraege}
-        for a, pg in (manuelle_zuordnung or {}).items():
-            eintraege[a] = pg          # Handzuordnung hat Vorrang
-            quelle[a] = "von Hand zugeordnet"
-        df_z = pd.DataFrame([{"Fertigungsauftrag": a, "Sparte": p, "Quelle": quelle[a]}
-                             for a, p in sorted(eintraege.items())])
-        ws, _ = _blatt_mit_daten(
-            wb, "Zuordnung_Auftraege", df_z,
-            "Welcher Fertigungsauftrag zu welcher Sparte gehoert. Gewonnen aus der Spalte "
-            "'Kostenobjekt' des KPTM-Exports und aus 'RUECKMELDE_NR' der PFAK-Datei; wo beide "
-            "Quellen etwas wissen, stimmen sie ueberein. Von Hand vorgenommene Zuordnungen "
-            "haben Vorrang und sind in der Spalte 'Quelle' als solche gekennzeichnet. "
-            "Die Blaetter 'Daten_PWBS_*' schlagen hier nach.")
-        for sp, br in (("A", 20), ("B", 12), ("C", 26)):
-            ws.column_dimensions[sp].width = br
-
-    if nach_artikel:
-        df_a = pd.DataFrame([{"Artikelnummer": a, "Sparte": p}
-                             for a, p in sorted(nach_artikel.items())])
-        ws, _ = _blatt_mit_daten(
-            wb, "Zuordnung_Artikel", df_a,
-            "Ersatzschluessel: Artikelnummern, die eindeutig zu genau einer Sparte gehoeren. "
-            "Wird nur herangezogen, wenn die Auftragsnummer keinen Treffer liefert.")
-        ws.column_dimensions["A"].width = 16
-        ws.column_dimensions["B"].width = 12
+    # Muss VOR den PWBS-Blaettern stehen, weil deren Sparten-Formel hier hineinschlaegt.
+    if nach_auftrag is not None or nach_artikel is not None:
+        _zuordnung_blatt(wb, nach_auftrag, nach_artikel, manuelle_zuordnung)
 
     pwbs_e = pwbs_a = None
     if pwbs_ende:
@@ -333,9 +355,9 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "  Bestandsveraenderung UFE hat ebenfalls eine Formel:",
             "    = Bestand(Stichtag) aus 'Daten_PWBS_Ende' minus Anfangsbestand.",
             "    Die Sparte je Auftrag ermittelt dort eine INDEX/VERGLEICH-Formel - erst ueber die",
-            "    Auftragsnummer ('Zuordnung_Auftraege'), ersatzweise ueber die Artikelnummer",
-            "    ('Zuordnung_Artikel'). Auftraege ohne Artikelnummer sind Serviceauftraege und",
-            "    zaehlen nicht mit.",
+            "    Auftragsnummer, ersatzweise ueber die Artikelnummer (beide Tabellen im Blatt",
+            "    'Zuordnung'). Auftraege ohne Artikelnummer sind Serviceauftraege und zaehlen",
+            "    nicht mit.",
             "",
             "  Zeilen OHNE Formel - und warum:",
             "    Die drei Deckungsdifferenzen  stammen aus dem BAB, nicht aus diesen Exporten.",
