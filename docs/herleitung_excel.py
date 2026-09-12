@@ -379,6 +379,22 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
     label_zu_key = {}
     for key in result.index:
         label_zu_key[str(mapping["zeilen_labels"].get(key, key)).strip()] = key
+
+    def key_zu_beschriftung(text):
+        """Findet den Zeilenschluessel zur Beschriftung in Spalte A.
+
+        Der Vergleich darf nicht exakt sein: Eine zurueckgehaltene Zeile traegt einen
+        Zusatz wie '  (nicht berechenbar - siehe Hinweise)'. Wird sie dadurch nicht
+        wiedererkannt, faellt sie aus den Summenformeln heraus - und ein spaeter von
+        Hand nachgetragener Wert bliebe wirkungslos, ohne dass das jemand bemerkt.
+        """
+        t = str(text).strip()
+        if t in label_zu_key:
+            return label_zu_key[t]
+        for trenner in ("  (", " ("):
+            if trenner in t and t.split(trenner)[0].strip() in label_zu_key:
+                return label_zu_key[t.split(trenner)[0].strip()]
+        return None
     # Nur der zusammenhaengende Tabellenblock direkt unter der Kopfzeile. Weiter
     # unten steht die Datengrundlage des Diagramms, deren Zeilen genauso heissen
     # ("Material", "Fremdleistungen"). Ohne diese Grenze wuerden sie mitverformelt -
@@ -388,7 +404,7 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
         beschriftung = ws.cell(row=r, column=1).value
         if beschriftung is None or not str(beschriftung).strip():
             break
-        key = label_zu_key.get(str(beschriftung).strip())
+        key = key_zu_beschriftung(beschriftung)
         if key:
             zeilen_nr[key] = r
 
@@ -403,6 +419,8 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
     for key, r in zeilen_nr.items():
         for pg, c in pg_spalte.items():
             spalte = get_column_letter(c)
+            if key == "bestand_ufe" and not ufe_berechnet:
+                continue        # bleibt 0,00 - aber die Zeile zaehlt in den Summen mit
             if key in KPTM_ZEILEN:
                 formel = (f'=SUMIFS({bereich_betrag},{bereich_zeile},"{key}",'
                           f'{bereich_ziel},{spalte}${kopfzeile})')
