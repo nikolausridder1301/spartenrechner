@@ -482,6 +482,15 @@ function showResult(summary, url, filename) {
 
   // Per Auffangregel zugeordnete Konten ausweisen - sie sind korrekt verbucht,
   // aber niemand hat sie einzeln geprueft. Das gehoert vor Augen, nicht ins Log.
+  if (summary.fracht_ohne_ziel && Object.keys(summary.fracht_ohne_ziel).length) {
+    const eurF = (v) => (v || 0).toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
+    const teile = Object.entries(summary.fracht_ohne_ziel).map(([k, v]) => `${k} (${eurF(v)} €)`);
+    html += `<div class="warning-box">⚠️ Ausgangsfracht konnte nicht auf ein Frachtkostenobjekt
+      umgebucht werden und blieb auf der operativen Sparte: <strong>${teile.join(", ")}</strong>.
+      Es fehlt das Kostenobjekt &lt;Familie&gt;0100. Der Deckungsbeitrag dieser Sparte ist
+      dadurch zu niedrig.</div>`;
+  }
+
   if (summary.per_regel_zugeordnet && summary.per_regel_zugeordnet.length) {
     html += `<div class="warning-box">ℹ️ Nach Kontenregel zugeordnet (nicht einzeln
       hinterlegt): <strong>${summary.per_regel_zugeordnet.join(", ")}</strong>.
@@ -496,7 +505,13 @@ function showResult(summary, url, filename) {
       html += `Unbekannte Produktgruppen gefunden (nicht in config/produktgruppen.json, ggf. Reorganisation): <strong>${summary.unbekannte_produktgruppen.join(", ")}</strong>. `;
     }
     if (summary.unbekannte_kostenarten.length) {
-      html += `Kostenarten ohne Mapping wurden ignoriert: <strong>${summary.unbekannte_kostenarten.join(", ")}</strong>. `;
+      // Mit Betrag: erst der sagt, wie dringend es ist.
+      const b = summary.unmapped_betrag || {};
+      const eurF = (v) => (v || 0).toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
+      const teile = summary.unbekannte_kostenarten.map((k) => `${k} (${eurF(b[k])} €)`);
+      const summe = Object.values(b).reduce((a, v) => a + v, 0);
+      html += `Kostenarten ohne Mapping – diese Beträge <strong>fehlen im Ergebnis</strong>:
+        <strong>${teile.join(", ")}</strong>, zusammen ${eurF(summe)} €. `;
     }
     html += `Siehe README für Details.</div>`;
   }

@@ -93,7 +93,7 @@ def main():
     satz = core.ermittle_stundensatz(df, mapping)
     if satz:
         mapping["standard_stundensatz"] = satz
-    result, produktgruppen, _, _ = core.build_spartenrechnung(df, mapping, pg_config)
+    result, produktgruppen, _, _, _ = core.build_spartenrechnung(df, mapping, pg_config)
 
     if args.pwbs_ende:
         jahr = core.geschaeftsjahr(df, args.zeitraum or args.referenz_sheet)

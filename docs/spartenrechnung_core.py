@@ -153,6 +153,26 @@ def betriebsparameter_aus_excel(pfad):
             f"(in einer der ersten zehn Zeilen). Gefunden wurde: {list(gefunden.columns)[:6]}"
         )
 
+    # Zweite, optionale Tabelle auf demselben Blatt: freie Parameter als
+    # Name/Wert-Paare. Hier gehoeren die erwarteten Zuschlagssaetze hin - sie sind
+    # Kalkulationsinnenleben und duerfen nicht ins oeffentliche Repository, aber ohne
+    # Sollwert kann eine hausweite Satzaenderung nicht auffallen.
+    parameter = {}
+    sp_name = _spalte_finden(roh.columns, {"parameter", "kennzahl", "name"})
+    sp_wert2 = _spalte_finden(roh.columns, {"wert", "betrag"})
+    if sp_name is not None and sp_wert2 is not None and sp_name != sp_sparte:
+        for _, zeile in roh.iterrows():
+            name = zeile[sp_name]
+            if name is None or (isinstance(name, float) and pd.isna(name)):
+                continue
+            try:
+                wert = float(zeile[sp_wert2])
+            except (TypeError, ValueError):
+                continue
+            if pd.isna(wert):
+                continue          # Erlaeuterungszeilen ohne Wert ueberspringen
+            parameter[str(name).strip().lower()] = wert
+
     anfangsbestand = {}
     for _, zeile in roh.iterrows():
         sparte = _schluessel(zeile[sp_sparte])
@@ -168,10 +188,10 @@ def betriebsparameter_aus_excel(pfad):
         if sp_jahr is not None and not pd.isna(zeile[sp_jahr]):
             jahr = str(int(zeile[sp_jahr]))
         anfangsbestand.setdefault(jahr, {})[sparte] = round(wert, 2)
-    return {"anfangsbestand": anfangsbestand}
+    return {"anfangsbestand": anfangsbestand, "parameter": parameter}
 
 
-def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path):
+def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path, parameter=None):
     """Schreibt die Betriebsparameter als Excel-Datei - dasselbe Format, das
     betriebsparameter_aus_excel wieder einliest."""
     wb = Workbook()
@@ -194,9 +214,30 @@ def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path):
             z.number_format = "#,##0.00"
             z.border = BORDER
             r += 1
+    # Zweite Tabelle: freie Parameter. Hier gehoeren die erwarteten Zuschlagssaetze
+    # hin - damit eine hausweite Satzaenderung auffaellt, ohne dass der Sollwert im
+    # oeffentlichen Repository steht.
+    for i, titel in ((5, "Parameter"), (6, "Wert")):
+        z = ws.cell(row=3, column=i, value=titel)
+        z.font = FONT_HEADER
+        z.fill = FILL_HEADER
+        z.border = BORDER
+    for i, (name, wert) in enumerate(sorted((parameter or {}).items()), start=4):
+        ws.cell(row=i, column=5, value=name).border = BORDER
+        z = ws.cell(row=i, column=6, value=float(wert))
+        z.number_format = "0.0000"
+        z.border = BORDER
+    ws.cell(row=max(len(parameter or {}), 1) + 6, column=5, value=(
+        "z.B. mgk_zuschlagssatz = 0,10 und vvgk_zuschlagssatz = 0,275. Weicht der aus "
+        "den Daten zurueckgerechnete Satz davon ab, meldet das Tool es."
+    )).font = Font(italic=True, size=9)
+
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 16
     ws.column_dimensions["C"].width = 18
+    ws.column_dimensions["D"].width = 3
+    ws.column_dimensions["E"].width = 24
+    ws.column_dimensions["F"].width = 12
     ws.freeze_panes = "A4"
     wb.save(out_path)
     return out_path
@@ -212,6 +253,15 @@ def load_config(config_dir):
     betrieb = lade_betriebsparameter(config_dir)
     if betrieb.get("standard_stundensatz"):
         mapping["standard_stundensatz"] = betrieb["standard_stundensatz"]
+    # Erwartete Zuschlagssaetze, falls in den Betriebsparametern hinterlegt. Ohne sie
+    # prueft zuschlagssaetze() nur, ob die Sparten untereinander uebereinstimmen - eine
+    # hausweite Satzaenderung faellt dann nicht auf.
+    for schluessel in ("mgk", "vvgk"):
+        for quelle in (betrieb, betrieb.get("parameter", {})):
+            wert = quelle.get(f"{schluessel}_zuschlagssatz") if quelle else None
+            if wert:
+                mapping[f"{schluessel}_zuschlagssatz_erwartet"] = float(wert)
+                break
     return mapping, pg
 
 
@@ -640,6 +690,14 @@ def build_spartenrechnung(df, mapping, pg_config):
     # Konten still heraus. Per Regel zugeordnete werden gesondert gemeldet.
     praefix_regel = mapping.get("kostenart_praefix_regel", {})
     per_regel = set()
+    # Eine Fracht-Umbuchung, die ihr Ziel nicht findet, bucht still auf die operative
+    # Sparte zurueck und verfaelscht deren Deckungsbeitrag. Heute existiert fuer jede
+    # vorkommende Familie ein *0100-Objekt - bei einer neuen Familie waere das anders,
+    # und ohne diese Erfassung faellt es niemandem auf.
+    fracht_ohne_ziel = {}
+    # Betraege je nicht zugeordneter Kostenart. Der blosse Kontocode sagt nicht, ob
+    # 50 EUR oder 50.000 EUR fehlen - genau das entscheidet aber, wie dringend es ist.
+    unmapped_betrag = {}
 
     for _, row in df.iterrows():
         ka = row["Kostenart"]
@@ -653,7 +711,9 @@ def build_spartenrechnung(df, mapping, pg_config):
             if regel.get("umbuchung") == "fracht":
                 ziel_pg = pg[:2] + fracht_suffix
                 if ziel_pg not in produktgruppen:
-                    ziel_pg = pg  # kein Fracht-Kostenobjekt vorhanden: unveraendert lassen
+                    # Kein Fracht-Kostenobjekt vorhanden: auf der Sparte lassen und merken.
+                    fracht_ohne_ziel[pg] = fracht_ohne_ziel.get(pg, 0.0) + float(wert)
+                    ziel_pg = pg
             result.loc[regel["zeile"], ziel_pg] += regel["sign"] * wert
         elif ka.startswith(kst_prefix):
             # Nur Wertart ISWF (Ist-WERT in EUR). ISMF waere die Ist-MENGE in Stunden
@@ -666,12 +726,17 @@ def build_spartenrechnung(df, mapping, pg_config):
             per_regel.add(ka)
         else:
             unmapped_kostenarten.add(ka)
+            unmapped_betrag[ka] = unmapped_betrag.get(ka, 0.0) + float(wert)
 
     result["Summe"] = result.sum(axis=1)
     result = result[["Summe"] + produktgruppen]
     result = neu_berechnen(result)
 
-    return result, produktgruppen, unmapped_kostenarten, sorted(per_regel)
+    befunde = {
+        "unmapped_betrag": {k: round(v, 2) for k, v in sorted(unmapped_betrag.items())},
+        "fracht_ohne_ziel": {k: round(v, 2) for k, v in sorted(fracht_ohne_ziel.items())},
+    }
+    return result, produktgruppen, unmapped_kostenarten, sorted(per_regel), befunde
 
 
 def fertigungsstunden(df, mapping):
@@ -800,6 +865,14 @@ def zuschlagssaetze(result, mapping):
         if len(je_sparte) < 3:
             continue
         toleranz = mapping.get(f"{schluessel}_zuschlagssatz_toleranz", 0.005)
+        erwartet = mapping.get(f"{schluessel}_zuschlagssatz_erwartet")
+        if erwartet and abs(saetze[schluessel] - erwartet) > toleranz:
+            hinweise.append(
+                f"Der rechnerische {bez}-Zuschlagssatz betraegt {saetze[schluessel]:.2%}, "
+                f"hinterlegt sind {erwartet:.2%} (Bemessungsgrundlage: {grundlage}). Entweder "
+                f"wurde der Satz im ERP geaendert - dann bitte in den Betriebsparametern "
+                f"nachziehen - oder die Kontenzuordnung stimmt nicht mehr."
+            )
         tief = min(je_sparte, key=je_sparte.get)
         hoch = max(je_sparte, key=je_sparte.get)
         spanne = je_sparte[hoch] - je_sparte[tief]
@@ -1206,7 +1279,8 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     satz = ermittle_stundensatz(df, mapping)
     if satz:
         mapping["standard_stundensatz"] = satz
-    result, produktgruppen, unmapped, per_regel = build_spartenrechnung(df, mapping, pg_config)
+    result, produktgruppen, unmapped, per_regel, befunde = build_spartenrechnung(
+        df, mapping, pg_config)
 
     ufe_warnungen = []
     ufe_statistik = None
@@ -1261,6 +1335,8 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
         "unbekannte_produktgruppen": unbekannte_pg,
         "unbekannte_kostenarten": sorted(unmapped),
         "per_regel_zugeordnet": per_regel,
+        "unmapped_betrag": befunde["unmapped_betrag"],
+        "fracht_ohne_ziel": befunde["fracht_ohne_ziel"],
         "bwa_ergebnis": bwa_ergebnis,
         "ufe_warnungen": ufe_warnungen,
         "ufe_statistik": ufe_statistik,

@@ -67,7 +67,19 @@ def main():
     if summary["unbekannte_produktgruppen"]:
         print(f"WARNUNG: unbekannte Produktgruppen im Datensatz (nicht in config/produktgruppen.json): {summary['unbekannte_produktgruppen']}", file=sys.stderr)
     if summary["unbekannte_kostenarten"]:
-        print(f"WARNUNG: Kostenarten ohne Mapping gefunden (werden ignoriert): {summary['unbekannte_kostenarten']}", file=sys.stderr)
+        # Mit Betrag, nicht nur mit Kontonummer: erst der Betrag sagt, ob hier
+        # 50 EUR oder 50.000 EUR aus dem Ergebnis herausfallen.
+        betraege = summary.get("unmapped_betrag") or {}
+        teile = [f"{k} ({betraege.get(k, 0):,.2f} EUR)" for k in summary["unbekannte_kostenarten"]]
+        summe = sum(betraege.values())
+        print(f"WARNUNG: Kostenarten ohne Mapping - diese Betraege fehlen im Ergebnis: "
+              f"{', '.join(teile)}; zusammen {summe:,.2f} EUR", file=sys.stderr)
+    if summary.get("fracht_ohne_ziel"):
+        teile = [f"{k} ({v:,.2f} EUR)" for k, v in summary["fracht_ohne_ziel"].items()]
+        print(f"WARNUNG: Ausgangsfracht konnte nicht auf ein Frachtkostenobjekt umgebucht "
+              f"werden und blieb auf der operativen Sparte: {', '.join(teile)}. Es fehlt das "
+              f"Kostenobjekt <Familie>0100. Der Deckungsbeitrag dieser Sparte ist dadurch zu "
+              f"niedrig.", file=sys.stderr)
     stat = summary.get("ufe_statistik") or {}
     for h in stat.get("hinweise", []):
         print(f"HINWEIS (Bestandsveraenderung UFE): {h}", file=sys.stderr)
