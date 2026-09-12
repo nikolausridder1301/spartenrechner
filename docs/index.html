@@ -30,21 +30,16 @@
     </div>
 
     <form id="form" class="panel" style="display:none;">
-      <div class="field" id="parameter-field">
-        <label>Betriebsparameter <span id="parameter-status" class="param-badge">nicht hinterlegt</span></label>
-        <p class="hinweis" id="parameter-hinweis">
-          Stundensatz und Werkstattbestand zum Jahresanfang. Diese Werte stehen bewusst
-          <strong>nicht</strong> im öffentlichen Repository – aus ihnen liesse sich die
-          Preisbildung zurückrechnen. Einmalig hinterlegen: Ihr Browser merkt sie sich,
-          sie verlassen den Rechner nicht.
-          <a href="config/betriebsparameter.beispiel.json" download>Vorlage herunterladen</a>
-        </p>
-        <div class="dropzone" id="dropzone-param">
-          <span id="dropzone-param-text">betriebsparameter.json auswählen</span>
-          <input type="file" id="file-param" accept=".json" hidden>
-        </div>
-        <button type="button" id="param-loeschen" style="display:none;">Hinterlegte Parameter löschen</button>
-      </div>
+      <p class="was-brauche-ich">
+        <strong>Was Sie brauchen – alles Exporte aus dem ERP:</strong>
+        <span>1. <code>KPTM_Wertsummen</code> für den Zeitraum <em>(Pflicht)</em></span>
+        <span>2. <code>PWBS_Werkstattbestand</code> zum <strong>Periodenende</strong></span>
+        <span>3. <code>PWBS_Werkstattbestand</code> zum <strong>01.01.</strong> des Jahres</span>
+        <span>4. <code>PFAK_Fertigungsauftragskopf</code> – die neueste Datei, die vorliegt</span>
+        <span class="nebenbei">2–4 nur für die Zeile „Bestandsveränderung UFE"; ohne sie
+          rechnen alle übrigen Zeilen trotzdem. Optional zusätzlich die BWA für den
+          GuV-Kontrollabgleich.</span>
+      </p>
 
       <div class="field">
         <label for="zeitraum">Zeitraum (Anzeigetext)</label>
@@ -86,8 +81,10 @@
           Sparte zuordnen</strong>. Erst wenn weniger als 1 % offen ist, wird die Zeile gerechnet –
           lieber keine Zahl als eine falsche.
           <br><br>
-          Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante; alternativ kann eine
-          PWBS-Datei zum Periodenbeginn hochgeladen werden.
+          Der <strong>Anfangsbestand</strong> ist der Werkstattbestand zum 01.01. – laden Sie
+          dafür den PWBS-Export mit diesem Stichtag hoch. Danach bietet das Tool ihn als
+          Parameterdatei zum Speichern an, sodass er für die restlichen Monate des Jahres
+          hinterlegt ist und nicht jedes Mal mitgeladen werden muss.
         </p>
 
         <div class="field">
@@ -107,11 +104,27 @@
         </div>
 
         <div class="field">
-          <label>PWBS Werkstattbestand – Periodenbeginn (optional)</label>
+          <label>PWBS Werkstattbestand – Stichtag 01.01. (Anfangsbestand)</label>
           <div class="dropzone" id="dropzone-pwbs-a">
-            <span id="dropzone-pwbs-a-text">nur nötig, wenn kein Anfangsbestand hinterlegt ist</span>
+            <span id="dropzone-pwbs-a-text">Datei auswählen</span>
             <input type="file" id="file-pwbs-a" accept=".xls,.xlsx" hidden>
           </div>
+        </div>
+
+        <div class="field" id="parameter-field">
+          <label>Alternativ: hinterlegte Betriebsparameter
+            <span id="parameter-status" class="param-badge">nicht hinterlegt</span></label>
+          <p class="hinweis">
+            Statt den 01.01.-Export jedes Mal mitzuladen, kann der Anfangsbestand einmal
+            hinterlegt werden – Ihr Browser merkt ihn sich, er verlässt den Rechner nicht
+            und steht in keinem Repository.
+            <a href="config/betriebsparameter.beispiel.json" download>Vorlage ansehen</a>
+          </p>
+          <div class="dropzone" id="dropzone-param">
+            <span id="dropzone-param-text">betriebsparameter.json auswählen</span>
+            <input type="file" id="file-param" accept=".json" hidden>
+          </div>
+          <button type="button" id="param-loeschen" style="display:none;">Hinterlegte Parameter löschen</button>
         </div>
       </details>
 

@@ -179,6 +179,27 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   font-weight: 600;
 }
 
+/* Checkliste: was hochzuladen ist. Steht bewusst ganz oben - wer den Link
+   geteilt bekommt, soll ohne Rueckfrage wissen, welche Exporte er braucht. */
+.was-brauche-ich {
+  background: var(--accent-bg);
+  border: 1px solid #bcd4f7;
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  margin: 0 0 1.5rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.was-brauche-ich strong:first-child { display: block; margin-bottom: 0.4rem; }
+.was-brauche-ich span { display: block; }
+.was-brauche-ich code { font-family: var(--font-mono); font-size: 0.8rem; }
+.was-brauche-ich .nebenbei {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
 /* Betriebsparameter: Status, ob die lokalen Werte hinterlegt sind */
 .param-badge {
   display: inline-block;
