@@ -237,8 +237,9 @@ async function init() {
     }
 
     // Kernmodul + Konfiguration laden (aus diesem Repository, nicht von einem fremden Server)
-    const coreSrc = await (await fetch("spartenrechnung_core.py")).text();
-    pyodide.FS.writeFile("/spartenrechnung_core.py", coreSrc);
+    for (const modul of ["spartenrechnung_core.py", "herleitung_excel.py"]) {
+      pyodide.FS.writeFile("/" + modul, await (await fetch(modul)).text());
+    }
     pyodide.FS.mkdir("/config");
     for (const name of ["kostenart_mapping.json", "produktgruppen.json"]) {
       const txt = await (await fetch("config/" + name)).text();
