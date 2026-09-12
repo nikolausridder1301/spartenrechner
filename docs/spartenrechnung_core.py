@@ -380,6 +380,7 @@ def lade_produktgruppen_map(pfak_pfade=None, kptm_df=None):
     """
     nach_auftrag = {}
     artikel_kandidaten = {}
+    widersprueche = []
 
     if kptm_df is not None:
         auftrag_kandidaten = {}
@@ -402,7 +403,16 @@ def lade_produktgruppen_map(pfak_pfade=None, kptm_df=None):
             if not pg:
                 continue
             if _schluessel(rm):
-                nach_auftrag[_schluessel(rm)] = pg  # PFAK ist die genauere Quelle
+                # PFAK ist die genauere Quelle (Auftragskopf-Stammsatz) und ueberschreibt
+                # KPTM. Dass beide je verschiedene Gruppen nennen, ist die stillschweigende
+                # Annahme, auf der die ganze Zuordnung ruht - gemessen trifft sie zu
+                # (0 Widersprueche bei 3.801 gemeinsamen Auftraegen ueber drei Zeitraeume).
+                # Sie wird hier geprueft statt geglaubt: bricht sie, waeren Bestaende
+                # zwischen Sparten verschoben, ohne dass irgendetwas auffiele.
+                vorher = nach_auftrag.get(_schluessel(rm))
+                if vorher is not None and vorher != pg:
+                    widersprueche.append((_schluessel(rm), vorher, pg))
+                nach_auftrag[_schluessel(rm)] = pg
             if _schluessel(art):
                 artikel_kandidaten.setdefault(_schluessel(art), set()).add(pg)
 
@@ -412,7 +422,7 @@ def lade_produktgruppen_map(pfak_pfade=None, kptm_df=None):
     # weiteren Export Artikel ihre Eindeutigkeit verlieren koennen.
     nach_artikel = {a: next(iter(v)) for a, v in artikel_kandidaten.items() if len(v) == 1}
     mehrdeutig = sorted(a for a, v in artikel_kandidaten.items() if len(v) > 1)
-    return nach_auftrag, nach_artikel, mehrdeutig
+    return nach_auftrag, nach_artikel, mehrdeutig, widersprueche
 
 
 def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=None):
@@ -524,9 +534,15 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     Die nicht zuordenbaren Auftraege verteilen sich also keineswegs gleichmaessig -
     schon wenige Prozent Luecke koennen eine einzelne Sparte deutlich verfaelschen.
     """
-    nach_auftrag, nach_artikel, mehrdeutige_artikel = lade_produktgruppen_map(
+    nach_auftrag, nach_artikel, mehrdeutige_artikel, widersprueche = lade_produktgruppen_map(
         pfak_pfade, kptm_df=kptm_df)
     ende, statistik = werkstattbestand(pwbs_ende, nach_auftrag, nach_artikel, manuelle_zuordnung)
+    # Kennzahlen zur Zuordnungsqualitaet sofort setzen, nicht erst am Ende: bei
+    # blockierter Zeile wird frueh zurueckgekehrt, und dann fehlen genau die Angaben,
+    # mit denen man die Blockade erklaeren koennte.
+    statistik["mehrdeutige_artikel"] = len(mehrdeutige_artikel)
+    statistik["widersprueche"] = len(widersprueche)
+    statistik["hinweise"] = []
     luecke = statistik["luecke_quote"]
 
     warnungen = []
@@ -566,7 +582,7 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     if warnungen:
         return None, warnungen, statistik
 
-    hinweise = []
+    hinweise = statistik["hinweise"]
     werte = {pg: ende.get(pg, 0.0) - anfang.get(pg, 0.0) for pg in set(anfang) | set(ende)}
 
     # Die Prozentschwelle schuetzt die Summe, nicht die einzelne Sparte. Die nicht
@@ -587,8 +603,17 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
             f"von Hand zuordnen.", )
         statistik["kleiner_als_luecke"] = kleinere
 
-    statistik["mehrdeutige_artikel"] = len(mehrdeutige_artikel)
-    statistik["hinweise"] = hinweise
+    if widersprueche:
+        beispiele = ", ".join(f"{a} ({x} vs. {y})" for a, x, y in widersprueche[:4])
+        hinweise.append(
+            f"{len(widersprueche)} Fertigungsauftrag/-auftraege werden von KPTM und PFAK "
+            f"unterschiedlichen Sparten zugeordnet: {beispiele}"
+            f"{' ...' if len(widersprueche) > 4 else ''}. Das Tool folgt PFAK. Bisher trat "
+            f"dieser Fall nie auf - tritt er nun auf, verschieben sich Bestaende zwischen "
+            f"Sparten. Bitte im ERP klaeren, welche Zuordnung gilt."
+        )
+
+
     # Der Bestand zum Stichtag ist zugleich der Anfangsbestand der Folgeperiode.
     # Faellt der Stichtag auf den 01.01., ist es der des naechsten Geschaeftsjahres -
     # damit schreibt sich die Jahreskonstante aus den Daten selbst fort.
@@ -1173,7 +1198,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     nach_auftrag = nach_artikel = None
     if pwbs_ende:
         # PFAK ist optional: die Zuordnung Auftrag -> Produktgruppe steckt bereits in KPTM.
-        nach_auftrag, nach_artikel, _ = lade_produktgruppen_map(pfak_pfade, kptm_df=df)
+        nach_auftrag, nach_artikel, _, _ = lade_produktgruppen_map(pfak_pfade, kptm_df=df)
         ufe, ufe_warnungen, ufe_statistik = bestandsveraenderung_ufe(
             pwbs_ende, pfak_pfade, anfangsbestand=gespeicherter_ab, pwbs_anfang=pwbs_anfang,
             jahr=jahr, kptm_df=df, manuelle_zuordnung=manuelle_zuordnung)

@@ -20,6 +20,7 @@
     "PB0004",
     "PB0005",
     "PB0006",
+    "PB0007",
     "PB0008",
     "PB0100",
     "SR0001",
@@ -47,9 +48,10 @@
     "PB0100": "Fracht und Verpackung Pressbohrtechnik",
     "SR0001": "Schneidrollen",
     "SR0100": "Fracht Schneidrollen",
-    "PB0006": "",
-    "PB0008": ""
+    "PB0006": "HDD Ortungstechnik",
+    "PB0008": "Rohrsanierungstechnik",
+    "PB0007": "VAB Vertikalbohrgeräte"
   },
-  "_hinweis_neue_sparten": "Neue Produktgruppen tauchen im Jahresverlauf auf (PB0006 und PB0008 erstmals in Q2 2026). Das Tool verliert sie nicht - es haengt unbekannte Gruppen als eigene Spalte hinten an und meldet sie. Hier eingetragen stehen sie an der richtigen Stelle der Familienreihenfolge. Bitte die Meldung 'unbekannte Produktgruppen' ernst nehmen und die Liste ergaenzen, statt sie zu ignorieren.",
+  "_hinweis_neue_sparten": "Neue Produktgruppen tauchen im Jahresverlauf auf. PB0006 und PB0008 erstmals in Q2 2026; PB0007 ist in der Reorganisation Horizontalbohrtechnik vorgesehen, in den Buchungsdaten aber noch nicht aufgetreten - hier vorab eingetragen, damit es beim ersten Auftreten an der richtigen Stelle steht. Die Bezeichnungen stammen aus dem Blatt 'neue_Produktgruppen' der Datei 'Alte vs Neue Produktgruppen Horizontalbohrtechnik.xlsx'. Das Tool verliert unbekannte Gruppen nicht - es haengt sie als eigene Spalte an und meldet sie; die Meldung bitte ernst nehmen.",
   "_hinweis_bezeichnung": "Klartextnamen der Sparten, erscheinen als Zeile 'Bezeichnung' im Ergebnis und als Beschriftung im Diagramm. Leer bedeutet: Name nicht bekannt - dann zeigt das Tool den Code. PB0006 und PB0008 sind 2026 neu entstanden; ihre Bezeichnung bitte aus dem ERP nachtragen, erfunden wird hier nichts."
 }
