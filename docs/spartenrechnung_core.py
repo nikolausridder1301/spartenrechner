@@ -684,7 +684,7 @@ def neu_berechnen(result):
 
 
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
-                 stunden_df=None, unproduktiv=None):
+                 stunden_df=None, unproduktiv=None, herleitung=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -875,6 +875,18 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         ws2.cell(row=i, column=1, value=line)
     ws2.column_dimensions["A"].width = 140
 
+    # Rohdaten und Formeln anhaengen, damit jede Zahl rueckverfolgbar ist.
+    # Schlaegt das fehl, bleibt die Datei mit den reinen Werten erhalten - die
+    # Nachvollziehbarkeit ist ein Zusatz, kein Grund, das Ergebnis zu verlieren.
+    if herleitung:
+        try:
+            import herleitung_excel
+            herleitung_excel.baue_herleitungsmappe(wb, result, mapping, **herleitung)
+        except Exception as e:
+            ws2.cell(row=len(hinweise) + 2, column=1,
+                     value=f"Hinweis: Die Datenblaetter zur Herleitung konnten nicht "
+                           f"erzeugt werden ({e}). Die Werte oben sind davon unberuehrt.")
+
     wb.save(out_path)
 
 
@@ -895,10 +907,12 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
 
     ufe_warnungen = []
     ufe_statistik = None
+    jahr = geschaeftsjahr(df, zeitraum)
+    gespeicherter_ab = lade_anfangsbestand(config_dir, jahr)
+    nach_auftrag = nach_artikel = None
     if pwbs_ende:
         # PFAK ist optional: die Zuordnung Auftrag -> Produktgruppe steckt bereits in KPTM.
-        jahr = geschaeftsjahr(df, zeitraum)
-        gespeicherter_ab = lade_anfangsbestand(config_dir, jahr)
+        nach_auftrag, nach_artikel = lade_produktgruppen_map(pfak_pfade, kptm_df=df)
         ufe, ufe_warnungen, ufe_statistik = bestandsveraenderung_ufe(
             pwbs_ende, pfak_pfade, anfangsbestand=gespeicherter_ab, pwbs_anfang=pwbs_anfang,
             jahr=jahr, kptm_df=df, manuelle_zuordnung=manuelle_zuordnung)
@@ -916,7 +930,16 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     unprod_betrag, unprod_stunden = unproduktive_gemeinkosten(df, mapping)
     stunden_df = fertigungsstunden(df, mapping)
     write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=bwa_ergebnis, bwa_sheet=bwa_sheet,
-                 stunden_df=stunden_df, unproduktiv=(unprod_betrag, unprod_stunden))
+                 stunden_df=stunden_df, unproduktiv=(unprod_betrag, unprod_stunden),
+                 herleitung={
+                     "produktgruppen": produktgruppen,
+                     "kptm_df": df,
+                     "pwbs_ende": pwbs_ende,
+                     "pwbs_anfang": pwbs_anfang,
+                     "nach_auftrag": nach_auftrag,
+                     "nach_artikel": nach_artikel,
+                     "anfangsbestand": gespeicherter_ab,
+                 })
 
     known_pg = set(pg_config["reihenfolge"])
     unbekannte_pg = [p for p in produktgruppen if p not in known_pg]
