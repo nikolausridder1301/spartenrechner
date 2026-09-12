@@ -361,12 +361,17 @@ json.dumps(summary)
 function showResult(summary, url, filename) {
   let html = "<h2>✅ Spartenrechnung erstellt</h2>";
   html += `<div class="summary-line"><span>Rohdaten-Zeilen verarbeitet</span><span>${summary.zeilen.toLocaleString("de-DE")}</span></div>`;
-  html += `<div class="summary-line"><span>Erlöse (Summe)</span><span>${summary.erloese_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
-  html += `<div class="summary-line"><span>DB III bottom-up (Summe)</span><span>${summary.db3_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
+  html += `<div class="summary-line"><span>Erlöse (Summe der Sparten)</span><span>${summary.erloese_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
+  html += `<div class="summary-line"><span>DB III bottom-up (Summe der Sparten)</span><span>${summary.db3_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
   if (summary.bwa_ergebnis !== null && summary.bwa_ergebnis !== undefined) {
     const delta = summary.db3_summe - summary.bwa_ergebnis;
     html += `<div class="summary-line"><span>Ergebnis lt. GuV (BWA, kumuliert)</span><span>${summary.bwa_ergebnis.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
-    html += `<div class="summary-line"><span>Δ zu erklären (wie bisher manuell)</span><span>${delta.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
+    html += `<div class="summary-line"><span>Δ zu erklären</span><span>${delta.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
+    html += `<p class="hinweis" style="margin-top:0.4rem">„Summe der Sparten" ist nicht das
+      Gesamtunternehmensergebnis: Sachkonto-Buchungen ohne Produktgruppe (z.&nbsp;B.
+      Grundstücksverkäufe, Abgrenzungen, periodenfremde Erträge) tragen keine Sparte und
+      erscheinen in keinem KPTM-Export – die Δ-Zeile enthält deshalb auch diese Posten,
+      nicht nur die Deckungsdifferenzen. Details im Hinweise-Blatt der Ausgabedatei.</p>`;
   }
 
   // Die aus den Rohdaten zurueckgerechneten Zuschlagssaetze. Frueher stand hier der

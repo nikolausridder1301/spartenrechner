@@ -1007,12 +1007,17 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         cell.border = BORDER
         cell.number_format = "#,##0.00"
         row_i += 1
-        c = ws.cell(row=row_i, column=1, value="Δ DB III (bottom-up) ./. Ergebnis lt. GuV")
+        c = ws.cell(row=row_i, column=1, value="Δ DB III (Summe der Sparten) ./. Ergebnis lt. GuV")
         c.font = FONT_BOLD
         cell = ws.cell(row=row_i, column=2, value=round(delta, 2))
         cell.fill = FILL_FORMULA
         cell.border = BORDER
         cell.number_format = "#,##0.00"
+        row_i += 1
+        ws.cell(row=row_i, column=1, value=(
+            "Enthaelt u.a. Sachkonto-Positionen ohne Produktgruppe (Grundstuecke, Abgrenzungen, "
+            "periodenfremde Ertraege) - siehe Hinweise-Blatt 'Was die Spalte Summe nicht enthaelt'."
+        )).font = Font(italic=True, size=9, color="808080")
         row_i += 1
         ws.cell(row=row_i, column=1,
                 value="  Hinweis: Δ entspricht der Differenz, die bisher manuell erklaert wurde "
@@ -1123,6 +1128,18 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         "  echten Sparte. Afa ist in allen Perioden null. sbE laut BWA Q1 2026 ebenfalls 0,00 EUR.",
         "- aktivierte Eigenleistung: in der gesamten Historie genau eine Buchung (Feb. 2024, im Dez. 2024",
         "  wieder aufgeloest); im ERP existiert dafuer gar kein Konto.",
+        "",
+        "WAS DIE SPALTE 'SUMME' NICHT ENTHAELT:",
+        "Die manuelle Referenzrechnung fuehrt neben den echten Sparten (Produktgruppen) fuenf weitere",
+        "Spalten fuer Sachkonto-Buchungen ohne Produktgruppe: 712000 'Photovoltaik Anlage', 721000",
+        "'Grundstueck Valluhn', 910000 'Abgrenzungen Walkenried', 920000 'Weiterberechnung Valluhn',",
+        "999999 'periodenfremder Ertrag'. Keiner dieser fuenf Codes kommt in KPTM als Produktgruppe vor -",
+        "das Tool kann sie also strukturell nicht erzeugen, gleich welcher Zeitraum hochgeladen wird.",
+        "Die Spalte 'Summe' ist deshalb die Summe UEBER DIE SPARTEN, nicht das Gesamtunternehmensergebnis.",
+        "",
+        "Der Vergleich mit der BWA weiter unten (falls hochgeladen) zeigt die Groessenordnung dieser und",
+        "aehnlicher Posten fuer den jeweils aktuellen Zeitraum - das ist der eigentliche Zweck der Zeile",
+        "'Δ zu erklaeren'.",
         "",
         "MANUELL ZU ERGAENZEN (rosa) - aus den vorliegenden Rohdaten nachweislich NICHT herleitbar:",
         "- FEK-/MGK-/VVGK-Deckungsdifferenz: Gegenueberstellung der ueber die Kostentraeger VERRECHNETEN",

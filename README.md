@@ -170,6 +170,20 @@ berechneten DB III an. Diese Differenz muss weiterhin manuell erklärt werden
 (Sonderposten, "keine Abrechnung BAB", "fehlende Abbildung SuSa in BAB und
 Kostenträger") – das war auch im bisherigen Prozess ein manueller Schritt.
 
+### Was in der Spalte „Summe" fehlt – strukturell, nicht nur beim aktuellen Stand
+
+Die manuelle Referenzrechnung führt neben den echten Sparten fünf weitere Spalten
+für Sachkonto-Buchungen ohne Produktgruppe: `712000` Photovoltaik Anlage,
+`721000` Grundstück Valluhn, `910000` Abgrenzungen Walkenried, `920000`
+Weiterberechnung Valluhn, `999999` periodenfremder Ertrag. Keiner dieser fünf
+Codes taucht in KPTM als Produktgruppe auf – das Tool kann sie also aus
+keinem Zeitraum ableiten. „Summe" ist deshalb die **Summe über die Sparten**,
+nicht das Gesamtunternehmensergebnis, und der BWA-Vergleich oben enthält diese
+Posten mit, nicht nur die Deckungsdifferenzen.
+
+Konkrete Beträge je Periode stehen nicht hier (öffentliches Repository), sondern
+in `intern/HERLEITUNG.md`.
+
 ## Projektstruktur
 
 ```

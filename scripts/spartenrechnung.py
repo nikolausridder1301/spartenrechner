@@ -93,8 +93,8 @@ def main():
     if summary["bwa_ergebnis"] is not None:
         print(f"BWA-Ergebnis (kumuliert, {args.bwa_sheet}): {summary['bwa_ergebnis']:,.2f}")
     print(f"Geschrieben: {args.output}")
-    print(f"\nErloese (Summe): {summary['erloese_summe']:,.2f}")
-    print(f"DB III (Summe):  {summary['db3_summe']:,.2f}")
+    print(f"\nErloese (Summe der Sparten): {summary['erloese_summe']:,.2f}")
+    print(f"DB III (Summe der Sparten):  {summary['db3_summe']:,.2f}")
 
 
 if __name__ == "__main__":
