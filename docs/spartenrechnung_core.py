@@ -47,16 +47,41 @@ FILLS = {"auto": FILL_AUTO, "auto_pruef": FILL_AUTO_PRUEF, "manual": FILL_MANUAL
          "formula": FILL_FORMULA, "strukturell_null": FILL_NULL}
 
 
+def ermittle_stundensatz(df, mapping):
+    """Rechnet den Verrechnungssatz der Fertigung aus den Rohdaten selbst aus.
+
+    Fuer die Fertigungskostenstellen (Praefix 'K2') fuehrt KPTM zwei Wertarten:
+    ISWF = Ist-Wert in EUR und ISMF = Ist-Menge in Stunden. Es gilt
+    ISWF = ISMF x Satz, der Satz ist also schlicht ISWF / ISMF.
+
+    Geprueft an Q1 2026: bei allen 14 Fertigungskostenstellen derselbe Satz
+    identisch (keine Abweichung ueber 1 Cent). Deshalb muss der Satz nirgends
+    hinterlegt werden - er kommt aus den Daten, die ohnehin hochgeladen werden.
+    Das ist auch der sicherere Weg: der Satz ist Kalkulationsinnenleben, aus dem
+    sich die Preisbildung zurueckrechnen laesst, und steht so an keiner Stelle
+    gespeichert.
+    """
+    kst = df[df["Kostenart"].str.startswith(mapping["kostenstellen_praefix"])]
+    wert = kst[kst["Wertart"] == mapping.get("kostenstellen_wertart", "ISWF")]["Wert/Menge"].sum()
+    menge = kst[kst["Wertart"] == "ISMF"]["Wert/Menge"].sum()
+    if not menge:
+        return None
+    return round(float(wert) / float(menge), 4)
+
+
 def lade_betriebsparameter(config_dir):
-    """Laedt die Betriebsparameter (Stundensatz, Anfangsbestaende), falls vorhanden.
+    """Laedt die Betriebsparameter (Werkstattbestand zum Jahresanfang), falls vorhanden.
 
-    Diese Werte sind Kalkulationsinnenleben und liegen deshalb bewusst NICHT im
-    Repository: aus Stundensatz und Zuschlagssaetzen liesse sich die Preisbildung
-    zurueckrechnen. Die Datei bleibt lokal (siehe .gitignore) bzw. wird in der
-    Weboberflaeche einmalig hochgeladen und dort im Browser gespeichert.
+    Die Anfangsbestaende sind Firmenzahlen und liegen deshalb nicht im oeffentlichen
+    Repository, sondern im privaten Teil (intern/) bzw. werden in der Weboberflaeche
+    einmalig hinterlegt und dort im Browser gespeichert.
 
-    Fehlt sie, rechnet das Tool alle GuV-Zeilen unveraendert weiter - nur die
-    UFE-Zeile und die Umrechnung von Euro in Stunden entfallen.
+    Der Stundensatz stand hier frueher ebenfalls - er wird inzwischen aus den
+    Rohdaten errechnet (siehe ermittle_stundensatz) und muss nicht mehr gepflegt
+    werden.
+
+    Fehlt die Datei, rechnet das Tool alle GuV-Zeilen unveraendert weiter; nur die
+    Zeile Bestandsveraenderung UFE entfaellt.
 
     Gesucht wird an zwei Orten: im uebergebenen config-Verzeichnis (so schreibt die
     Weboberflaeche die Datei ins virtuelle Dateisystem) und daneben in 'intern/'
@@ -411,7 +436,11 @@ def fertigungsstunden(df, mapping):
         (Kostenstellen-Sammelauftraege)
       produktive FEK = Differenz der beiden
       davon Lager-/Kundenauftraege = Aufteilung nach Auftragsart
-      Stunden = Betrag / Standardstundensatz
+      Stunden = Wertart ISMF (Ist-Menge), direkt aus den Daten
+
+    Die Stunden werden bewusst NICHT als Betrag/Stundensatz gerechnet: ISMF fuehrt
+    sie bereits, das ist exakt und spart die Division durch einen Satz, der selbst
+    nur abgeleitet ist.
     """
     kst_prefix = mapping["kostenstellen_praefix"]
     kst_wertart = mapping.get("kostenstellen_wertart", "ISWF")
@@ -419,7 +448,9 @@ def fertigungsstunden(df, mapping):
     art_gemein = set(mapping.get("auftragsart_gemeinkosten", ["5"]))
     art_lager = set(mapping.get("auftragsart_lager", ["LAG", "DPL", "PBL", "INN", "ITL", "SRL"]))
 
-    sub = df[(df["Kostenart"].str.startswith(kst_prefix)) & (df["Wertart"] == kst_wertart)]
+    kst = df[df["Kostenart"].str.startswith(kst_prefix)]
+    stunden_je_kst = kst[kst["Wertart"] == "ISMF"].groupby("Kostenart")["Wert/Menge"].sum()
+    sub = kst[kst["Wertart"] == kst_wertart]
     zeilen = []
     for ka, grp in sub.groupby("Kostenart"):
         bez = grp["KOSTENART_BEZ"].iloc[0] if len(grp) else ""
@@ -436,7 +467,9 @@ def fertigungsstunden(df, mapping):
             "produktive FEK": produktiv,
             "davon Lageraufträge": lager,
             "davon Kundenaufträge": kunde,
-            "Stunden gesamt": gesamt / satz if satz else 0.0,
+            # ISMF fuehrt die Stunden direkt; der Satz ist nur der Rueckfall,
+            # falls ein Export die Mengen-Wertart einmal nicht mitliefert.
+            "Stunden gesamt": float(stunden_je_kst.get(ka, gesamt / satz if satz else 0.0)),
         })
     return pd.DataFrame(zeilen).sort_values("Kostenstelle")
 
@@ -742,6 +775,11 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     (dict) zurueck, u.a. fuer Warnungen zu unbekannten Kostenarten/Produktgruppen."""
     mapping, pg_config = load_config(config_dir)
     df = load_kptm(kptm_path)
+    # Der Stundensatz wird aus den Rohdaten errechnet, nicht gepflegt (siehe
+    # ermittle_stundensatz). Ein hinterlegter Wert dient nur noch als Rueckfall.
+    satz = ermittle_stundensatz(df, mapping)
+    if satz:
+        mapping["standard_stundensatz"] = satz
     result, produktgruppen, unmapped = build_spartenrechnung(df, mapping, pg_config)
 
     ufe_warnungen = []

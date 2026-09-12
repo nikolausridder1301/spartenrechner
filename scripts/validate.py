@@ -90,6 +90,9 @@ def main():
 
     mapping, pg_config = core.load_config(CONFIG_DIR)
     df = core.load_kptm(find_kptm_file(args.rohdaten))
+    satz = core.ermittle_stundensatz(df, mapping)
+    if satz:
+        mapping["standard_stundensatz"] = satz
     result, produktgruppen, _ = core.build_spartenrechnung(df, mapping, pg_config)
 
     if args.pwbs_ende:
