@@ -356,8 +356,13 @@ def lade_produktgruppen_map(pfak_pfade=None, kptm_df=None):
             if _schluessel(art):
                 artikel_kandidaten.setdefault(_schluessel(art), set()).add(pg)
 
+    # Mehrdeutige Artikel (kommen bei mehreren Sparten vor) taugen nicht als
+    # Ersatzschluessel und werden verworfen - konservativ richtig, aber nicht
+    # folgenlos: ihr Anteil ist von 0,3 % auf 2,8 % gestiegen, weil mit jedem
+    # weiteren Export Artikel ihre Eindeutigkeit verlieren koennen.
     nach_artikel = {a: next(iter(v)) for a, v in artikel_kandidaten.items() if len(v) == 1}
-    return nach_auftrag, nach_artikel
+    mehrdeutig = sorted(a for a, v in artikel_kandidaten.items() if len(v) > 1)
+    return nach_auftrag, nach_artikel, mehrdeutig
 
 
 def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=None):
@@ -383,7 +388,9 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
     df.columns = [c.strip() for c in df.columns]
     je_pg = {}
     zugeordnet = service = luecke = 0.0
+    ueber_artikel = service_mit_quelle = 0.0
     offene_auftraege = []
+    service_verdacht = []
     manuell = manuelle_zuordnung or {}
     for rm, art, bez, wert in zip(df["Rückmeldenummer"], df["Artikelnummer"],
                                   df["Bezeichnung"], df["Offener Wert"]):
@@ -395,13 +402,29 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
             # wenn eine Quelle eine Produktgruppe dafuer kennt. Ohne diese Sperre wandern
             # z.B. drei Monteureinsaetze nach PB0005 und verfaelschen die Sparte.
             service += wert
+            # Ein Serviceauftrag, dessen Bezeichnung ein Fertigungsteil benennt, ist
+            # ein Verdachtsfall: er wird still abgezogen, obwohl moeglicherweise doch
+            # gefertigt wurde. Der Betrag waechst (0,2 % im April, 0,6 % im August),
+            # deshalb wird er gezaehlt statt uebersehen.
+            if _schluessel(rm) in nach_auftrag or _schluessel(rm) in manuell:
+                service_mit_quelle += wert
+                service_verdacht.append({
+                    "auftrag": _schluessel(rm),
+                    "bezeichnung": str(bez).strip() if bez is not None else "",
+                    "wert": round(wert, 2),
+                })
             continue
-        pg = (manuell.get(_schluessel(rm))
-              or nach_auftrag.get(_schluessel(rm))
-              or nach_artikel.get(_schluessel(art)))
+        ueber_auftrag = manuell.get(_schluessel(rm)) or nach_auftrag.get(_schluessel(rm))
+        pg = ueber_auftrag or nach_artikel.get(_schluessel(art))
         if pg is not None:
             je_pg[pg] = je_pg.get(pg, 0.0) + wert
             zugeordnet += wert
+            if not ueber_auftrag:
+                # Nur ueber die Artikelnummer zugeordnet. Dieser Weg ist schwaecher:
+                # wird ein Artikel in einem spaeteren Export mehrdeutig, faellt die
+                # Zuordnung weg - mehr Quelldaten koennen das Ergebnis also
+                # verschlechtern. Deshalb wird sein Gewicht ausgewiesen.
+                ueber_artikel += wert
         else:
             luecke += wert
             offene_auftraege.append({
@@ -420,6 +443,9 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
         "luecke_quote": (luecke / gesamt if gesamt else 0.0),
         "service_quote": (service / gesamt if gesamt else 0.0),
         "offene_auftraege": offene_auftraege,
+        "ueber_artikel": round(ueber_artikel, 2),
+        "service_mit_quelle": round(service_mit_quelle, 2),
+        "service_verdacht": sorted(service_verdacht, key=lambda x: -x["wert"])[:20],
     }
     return je_pg, statistik
 
@@ -447,7 +473,8 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     Die nicht zuordenbaren Auftraege verteilen sich also keineswegs gleichmaessig -
     schon wenige Prozent Luecke koennen eine einzelne Sparte deutlich verfaelschen.
     """
-    nach_auftrag, nach_artikel = lade_produktgruppen_map(pfak_pfade, kptm_df=kptm_df)
+    nach_auftrag, nach_artikel, mehrdeutige_artikel = lade_produktgruppen_map(
+        pfak_pfade, kptm_df=kptm_df)
     ende, statistik = werkstattbestand(pwbs_ende, nach_auftrag, nach_artikel, manuelle_zuordnung)
     luecke = statistik["luecke_quote"]
 
@@ -488,7 +515,29 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     if warnungen:
         return None, warnungen, statistik
 
+    hinweise = []
     werte = {pg: ende.get(pg, 0.0) - anfang.get(pg, 0.0) for pg in set(anfang) | set(ende)}
+
+    # Die Prozentschwelle schuetzt die Summe, nicht die einzelne Sparte. Die nicht
+    # zuordenbaren Auftraege verteilen sich nicht gleichmaessig - erfahrungsgemaess
+    # landet rund die Haelfte der Luecke in EINER Sparte, im Extremfall alles.
+    # Ist die Luecke groesser als der kleinste ausgewiesene Wert, kann diese Sparte
+    # also komplett falsch sein, obwohl die Quote eingehalten ist.
+    betroffen = sorted((abs(v), pg) for pg, v in werte.items() if abs(v) > 0.005)
+    if betroffen and statistik["offen"] > betroffen[0][0]:
+        kleinere = [pg for betrag, pg in betroffen if betrag < statistik["offen"]]
+        hinweise.append(
+            f"Die Zuordnungsluecke von {statistik['offen']:,.2f} EUR ist groesser als der "
+            f"ausgewiesene Wert von {len(kleinere)} Sparte(n): {', '.join(kleinere[:6])}"
+            f"{' ...' if len(kleinere) > 6 else ''}. Die Quote von "
+            f"{statistik['luecke_quote']:.1%} ist zwar eingehalten, aber sie misst am "
+            f"Gesamtbestand - diese Sparten koennen dennoch vollstaendig falsch sein. "
+            f"Fuer belastbare Werte bei diesen Sparten die groessten offenen Auftraege "
+            f"von Hand zuordnen.", )
+        statistik["kleiner_als_luecke"] = kleinere
+
+    statistik["mehrdeutige_artikel"] = len(mehrdeutige_artikel)
+    statistik["hinweise"] = hinweise
     # Der Bestand zum Stichtag ist zugleich der Anfangsbestand der Folgeperiode.
     # Faellt der Stichtag auf den 01.01., ist es der des naechsten Geschaeftsjahres -
     # damit schreibt sich die Jahreskonstante aus den Daten selbst fort.
@@ -1029,7 +1078,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     nach_auftrag = nach_artikel = None
     if pwbs_ende:
         # PFAK ist optional: die Zuordnung Auftrag -> Produktgruppe steckt bereits in KPTM.
-        nach_auftrag, nach_artikel = lade_produktgruppen_map(pfak_pfade, kptm_df=df)
+        nach_auftrag, nach_artikel, _ = lade_produktgruppen_map(pfak_pfade, kptm_df=df)
         ufe, ufe_warnungen, ufe_statistik = bestandsveraenderung_ufe(
             pwbs_ende, pfak_pfade, anfangsbestand=gespeicherter_ab, pwbs_anfang=pwbs_anfang,
             jahr=jahr, kptm_df=df, manuelle_zuordnung=manuelle_zuordnung)

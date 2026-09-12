@@ -405,6 +405,31 @@ function showResult(summary, url, filename) {
     html += `<div class="summary-line"><span>nicht zuordenbar</span><span>${eur(stat.offen)} · ${pct(stat.luecke_quote)}</span></div>`;
     html += `<div class="summary-line"><span><strong>Werkstattbestand gesamt</strong></span><span><strong>${eur(stat.gesamt)}</strong></span></div>`;
 
+    // Warnungen, die die Zeile NICHT blockieren, aber die Belastbarkeit einzelner
+    // Sparten betreffen. Die Prozentschwelle misst am Gesamtbestand und sagt darum
+    // nichts ueber eine kleine Sparte aus.
+    if (stat.hinweise && stat.hinweise.length) {
+      html += `<div class="warning-box">⚠️ ${stat.hinweise.join(" ")}</div>`;
+    }
+    if (stat.ueber_artikel > 0 || stat.service_mit_quelle > 0) {
+      html += `<details class="zuordnung"><summary>Wie belastbar ist die Zuordnung?</summary>`;
+      html += `<div class="summary-line"><span>über die Auftragsnummer (sicherster Weg)</span>
+        <span>${eur(stat.zugeordnet - stat.ueber_artikel)}</span></div>`;
+      html += `<div class="summary-line"><span>nur über die Artikelnummer (schwächer)</span>
+        <span>${eur(stat.ueber_artikel)}</span></div>`;
+      if (stat.mehrdeutige_artikel) {
+        html += `<div class="summary-line"><span>Artikel ohne eindeutige Sparte (nicht nutzbar)</span>
+          <span>${stat.mehrdeutige_artikel}</span></div>`;
+      }
+      html += `<div class="summary-line"><span>Serviceaufträge, für die eine Sparte bekannt wäre</span>
+        <span>${eur(stat.service_mit_quelle)}</span></div>`;
+      html += `<p class="hinweis">Der Weg über die <strong>Artikelnummer</strong> ist schwächer:
+        Wird ein Artikel in einem späteren Export mehrdeutig, entfällt die Zuordnung – mehr
+        Daten können das Ergebnis dort also verschlechtern. Die genannten Serviceaufträge
+        werden bewusst abgezogen (es wird nichts gefertigt); das ist gegen die
+        Referenzrechnung Q1 2026 geprüft, der Betrag wächst aber.</p></details>`;
+    }
+
     const bereits = Object.keys(manuelleZuordnung).length;
     if (bereits) {
       html += `<div class="summary-line"><span>davon von Hand zugeordnet</span><span>${bereits} Aufträge</span></div>`;

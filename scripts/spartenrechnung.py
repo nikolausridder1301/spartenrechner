@@ -68,6 +68,9 @@ def main():
         print(f"WARNUNG: unbekannte Produktgruppen im Datensatz (nicht in config/produktgruppen.json): {summary['unbekannte_produktgruppen']}", file=sys.stderr)
     if summary["unbekannte_kostenarten"]:
         print(f"WARNUNG: Kostenarten ohne Mapping gefunden (werden ignoriert): {summary['unbekannte_kostenarten']}", file=sys.stderr)
+    stat = summary.get("ufe_statistik") or {}
+    for h in stat.get("hinweise", []):
+        print(f"HINWEIS (Bestandsveraenderung UFE): {h}", file=sys.stderr)
     for w in summary.get("ufe_warnungen", []):
         print(f"WARNUNG (Bestandsveraenderung UFE nicht berechnet): {w}", file=sys.stderr)
     if summary.get("per_regel_zugeordnet"):
