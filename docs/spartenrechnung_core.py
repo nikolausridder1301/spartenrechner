@@ -699,22 +699,41 @@ def zuschlagssaetze(result, mapping):
     if abs(basis_vvgk) >= 1:
         saetze["vvgk"] = wert("vvgk") / basis_vvgk
 
-    for schluessel, bez, grundlage in (
-        ("mgk", "MGK", "Material + Fremdleistungen"),
-        ("vvgk", "VVGK", "Herstellkosten = Material + Fremdleistungen + MGK + FEK"),
+    # Plausibilitaetsprobe OHNE hinterlegten Sollwert. Frueher wurde gegen eine
+    # erwartete Quote in der Konfiguration geprueft; die wurde entfernt, weil der
+    # Satz Kalkulationsinnenleben ist und das Repository oeffentlich - damit lief
+    # die Probe unbemerkt leer. Der Ersatz braucht keine Geheimzahl: Das Haus
+    # verrechnet EINEN Satz fuer alle Sparten, also muessen alle Sparten denselben
+    # Satz zeigen. Streut er, stimmt die Kontenzuordnung nicht mehr oder der Satz
+    # wurde unterjaehrig geaendert - beides faellt so auf, ohne Sollwert.
+    sparten = [c for c in result.columns if c != "Summe"]
+    for schluessel, bez, grundlage, zaehler, nenner in (
+        ("mgk", "MGK", "Material + Fremdleistungen",
+         "mgk", ["material", "fremdleistungen"]),
+        ("vvgk", "VVGK", "Herstellkosten = Material + Fremdleistungen + MGK + FEK",
+         "vvgk", ["material", "fremdleistungen", "mgk", "fek"]),
     ):
         if schluessel not in saetze:
             continue
-        erwartet = mapping.get(f"{schluessel}_zuschlagssatz_erwartet")
-        toleranz = mapping.get(f"{schluessel}_zuschlagssatz_toleranz", 0.005)
-        if erwartet is None:
+        je_sparte = {}
+        for pg in sparten:
+            basis = sum(float(result.loc[z, pg]) for z in nenner)
+            if abs(basis) < 1000:      # Kleinstsparten verrauschen die Quote
+                continue
+            je_sparte[pg] = float(result.loc[zaehler, pg]) / basis
+        if len(je_sparte) < 3:
             continue
-        if abs(saetze[schluessel] - erwartet) > toleranz:
+        toleranz = mapping.get(f"{schluessel}_zuschlagssatz_toleranz", 0.005)
+        tief = min(je_sparte, key=je_sparte.get)
+        hoch = max(je_sparte, key=je_sparte.get)
+        spanne = je_sparte[hoch] - je_sparte[tief]
+        if spanne > toleranz:
             hinweise.append(
-                f"Der rechnerische {bez}-Zuschlagssatz betraegt {saetze[schluessel]:.2%} statt der "
-                f"erwarteten {erwartet:.1%} (Bemessungsgrundlage: {grundlage}). Entweder wurde der "
-                f"Satz im ERP geaendert - dann bitte in config/kostenart_mapping.json nachziehen - "
-                f"oder die Kontenzuordnung stimmt nicht mehr."
+                f"Der rechnerische {bez}-Zuschlagssatz ist nicht einheitlich: "
+                f"{je_sparte[tief]:.2%} bei {tief} gegen {je_sparte[hoch]:.2%} bei {hoch} "
+                f"(Bemessungsgrundlage: {grundlage}). Das Haus verrechnet einen einzigen "
+                f"Satz - eine Streuung bedeutet also, dass die Kontenzuordnung nicht mehr "
+                f"passt oder der Satz unterjaehrig geaendert wurde."
             )
     return saetze, hinweise
 
@@ -836,7 +855,8 @@ def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
 
 
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
-                 stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None):
+                 stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None,
+                 ufe_warnungen=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -874,6 +894,15 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         zeilen_nr[key] = row_i
         label_cell = ws.cell(row=row_i, column=1, value=labels.get(key, key))
         klass = ZEILEN_KLASSE.get(key, "manual")
+        # Eine zurueckgehaltene UFE-Zeile darf NICHT gruen erscheinen. Gruen heisst
+        # laut Legende "automatisch berechnet, gegen die Referenz geprueft" - hier
+        # steht aber eine 0,00, weil das Tool die Zahl bewusst verweigert. Wer nur
+        # die Datei bekommt, laese sonst eine geprueft aussehende Null, wo eine
+        # Zeile mit Millionenwirkung fehlt.
+        if key == "bestand_ufe" and ufe_warnungen:
+            klass = "manual"
+            label_cell.value = labels.get(key, key) + "  (nicht berechenbar – siehe Hinweise)"
+            label_cell.font = Font(bold=True, color="B3261E")
         if klass == "formula":
             label_cell.font = FONT_BOLD
         for j, c in enumerate(cols, start=2):
@@ -883,6 +912,11 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
             cell.border = BORDER
             cell.number_format = "#,##0.00"
         row_i += 1
+
+    if ufe_warnungen:
+        z = ws.cell(row=2, column=3, value="⚠ Bestandsveränderung UFE wurde NICHT berechnet – "
+                                           "die Zeile steht auf 0,00. Siehe Blatt Hinweise.")
+        z.font = Font(bold=True, color="B3261E")
 
     row_i = _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, row_i + 2)
 
@@ -1037,6 +1071,16 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         "",
         "Quelle: " + zeitraum,
     ]
+    if ufe_warnungen:
+        hinweise = [
+            "!!! ACHTUNG: Bestandsveraenderung UFE wurde NICHT berechnet !!!",
+            "",
+            "Die Zeile steht auf 0,00 - das ist KEIN Ergebnis, sondern eine fehlende Zahl.",
+            "Betriebsleistung, Rohmarge I und alle Deckungsbeitraege darunter sind dadurch",
+            "um diesen Betrag zu niedrig. Der Grund:",
+            "",
+        ] + ["  " + w for w in ufe_warnungen] + ["", "-" * 100, ""] + hinweise
+
     for i, line in enumerate(hinweise, start=1):
         ws2.cell(row=i, column=1, value=line)
     ws2.column_dimensions["A"].width = 140
@@ -1098,6 +1142,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=bwa_ergebnis, bwa_sheet=bwa_sheet,
                  stunden_df=stunden_df, unproduktiv=(unprod_betrag, unprod_stunden),
                  pg_bezeichnungen=pg_config.get("bezeichnung", {}),
+                 ufe_warnungen=ufe_warnungen if pwbs_ende else None,
                  herleitung={
                      "produktgruppen": produktgruppen,
                      "kptm_df": df,
