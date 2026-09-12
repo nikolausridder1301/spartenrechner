@@ -450,6 +450,16 @@ function showResult(summary, url, filename) {
     }
   }
 
+  // Per Auffangregel zugeordnete Konten ausweisen - sie sind korrekt verbucht,
+  // aber niemand hat sie einzeln geprueft. Das gehoert vor Augen, nicht ins Log.
+  if (summary.per_regel_zugeordnet && summary.per_regel_zugeordnet.length) {
+    html += `<div class="warning-box">ℹ️ Nach Kontenregel zugeordnet (nicht einzeln
+      hinterlegt): <strong>${summary.per_regel_zugeordnet.join(", ")}</strong>.
+      Alle 6er-Konten gehen auf „sbA". Bitte kurz prüfen, ob das für diese Konten
+      stimmt – falls nicht, in <code>config/kostenart_mapping.json</code> einzeln
+      eintragen.</div>`;
+  }
+
   if (summary.unbekannte_produktgruppen.length || summary.unbekannte_kostenarten.length) {
     html += `<div class="warning-box">⚠️ `;
     if (summary.unbekannte_produktgruppen.length) {

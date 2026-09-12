@@ -506,6 +506,11 @@ def build_spartenrechnung(df, mapping, pg_config):
     zeilen = list(mapping["zeilen_reihenfolge"])
     result = pd.DataFrame(0.0, index=zeilen, columns=produktgruppen)
     unmapped_kostenarten = set()
+    # Auffangregel nach Kontenpraefix. Die Einzelliste kennt nur die Konten, die im
+    # Kalibrierungszeitraum vorkamen; ohne diese Regel fallen spaeter auftauchende
+    # Konten still heraus. Per Regel zugeordnete werden gesondert gemeldet.
+    praefix_regel = mapping.get("kostenart_praefix_regel", {})
+    per_regel = set()
 
     for _, row in df.iterrows():
         ka = row["Kostenart"]
@@ -526,6 +531,10 @@ def build_spartenrechnung(df, mapping, pg_config):
             # und darf nicht in den Eurobetrag addiert werden.
             if row["Wertart"] == kst_wertart:
                 result.loc["fek", pg] += wert
+        elif ka[:1] in praefix_regel:
+            regel = praefix_regel[ka[:1]]
+            result.loc[regel["zeile"], pg] += regel["sign"] * wert
+            per_regel.add(ka)
         else:
             unmapped_kostenarten.add(ka)
 
@@ -533,7 +542,7 @@ def build_spartenrechnung(df, mapping, pg_config):
     result = result[["Summe"] + produktgruppen]
     result = neu_berechnen(result)
 
-    return result, produktgruppen, unmapped_kostenarten
+    return result, produktgruppen, unmapped_kostenarten, sorted(per_regel)
 
 
 def fertigungsstunden(df, mapping):
@@ -903,7 +912,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     satz = ermittle_stundensatz(df, mapping)
     if satz:
         mapping["standard_stundensatz"] = satz
-    result, produktgruppen, unmapped = build_spartenrechnung(df, mapping, pg_config)
+    result, produktgruppen, unmapped, per_regel = build_spartenrechnung(df, mapping, pg_config)
 
     ufe_warnungen = []
     ufe_statistik = None
@@ -955,6 +964,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
         "produktgruppen": produktgruppen,
         "unbekannte_produktgruppen": unbekannte_pg,
         "unbekannte_kostenarten": sorted(unmapped),
+        "per_regel_zugeordnet": per_regel,
         "bwa_ergebnis": bwa_ergebnis,
         "ufe_warnungen": ufe_warnungen,
         "ufe_statistik": ufe_statistik,

@@ -1,9 +1,30 @@
 {
   "_hinweis": "Bekannte Produktgruppen (= Sparten/Kostenobjekte) lt. Referenz-Datei 'Spartenrechnung Jan-Maerz 2026'. Falls im ERP-Export neue Codes auftauchen (z.B. durch die in Q2 2026 begonnene Produktgruppen-Reorganisation 'Alte vs Neue Produktgruppen Horizontalbohrtechnik'), werden diese vom Skript automatisch mit Platzhalter-Bezeichnung ergaenzt und in der Konsolenausgabe als Warnung gemeldet - diese Datei dann bitte manuell nachpflegen.",
-  "reihenfolge": ["DP0001","DP0002","DP0003","DP0004","DP0005","DP0006","DP0007","DP0008","DP0009","DP0100",
-                   "IT0001","IT0002","IT0100",
-                   "PB0001","PB0002","PB0003","PB0004","PB0005","PB0100",
-                   "SR0001","SR0100"],
+  "reihenfolge": [
+    "DP0001",
+    "DP0002",
+    "DP0003",
+    "DP0004",
+    "DP0005",
+    "DP0006",
+    "DP0007",
+    "DP0008",
+    "DP0009",
+    "DP0100",
+    "IT0001",
+    "IT0002",
+    "IT0100",
+    "PB0001",
+    "PB0002",
+    "PB0003",
+    "PB0004",
+    "PB0005",
+    "PB0006",
+    "PB0008",
+    "PB0100",
+    "SR0001",
+    "SR0100"
+  ],
   "bezeichnung": {
     "DP0001": "Schnecken Bergbau",
     "DP0002": "DTH < 139,7",
@@ -26,5 +47,6 @@
     "PB0100": "Fracht und Verpackung Pressbohrtechnik",
     "SR0001": "Schneidrollen",
     "SR0100": "Fracht Schneidrollen"
-  }
+  },
+  "_hinweis_neue_sparten": "Neue Produktgruppen tauchen im Jahresverlauf auf (PB0006 und PB0008 erstmals in Q2 2026). Das Tool verliert sie nicht - es haengt unbekannte Gruppen als eigene Spalte hinten an und meldet sie. Hier eingetragen stehen sie an der richtigen Stelle der Familienreihenfolge. Bitte die Meldung 'unbekannte Produktgruppen' ernst nehmen und die Liste ergaenzen, statt sie zu ignorieren."
 }

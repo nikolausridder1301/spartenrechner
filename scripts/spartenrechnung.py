@@ -70,6 +70,9 @@ def main():
         print(f"WARNUNG: Kostenarten ohne Mapping gefunden (werden ignoriert): {summary['unbekannte_kostenarten']}", file=sys.stderr)
     for w in summary.get("ufe_warnungen", []):
         print(f"WARNUNG (Bestandsveraenderung UFE nicht berechnet): {w}", file=sys.stderr)
+    if summary.get("per_regel_zugeordnet"):
+        print("HINWEIS: nach Kontenregel zugeordnet (nicht einzeln hinterlegt): "
+              + ", ".join(summary["per_regel_zugeordnet"]), file=sys.stderr)
     for w in summary.get("mgk_hinweise", []):
         print(f"WARNUNG: {w}", file=sys.stderr)
     saetze = summary.get("zuschlagssaetze") or {}

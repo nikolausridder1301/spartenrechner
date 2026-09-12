@@ -106,10 +106,29 @@ def _mapping_blatt(wb, mapping, produktgruppen):
     for i, pg in enumerate(produktgruppen, start=2):
         ws.cell(row=i, column=7, value=pg)
     ws.column_dimensions["G"].width = 16
-    return ws, f"Mapping!$G$2:$G${len(produktgruppen) + 1}"
+
+    # Auffangregel nach Kontenpraefix. Sie muss hier stehen, damit die Hilfsspalten
+    # in 'Daten_KPTM' dasselbe rechnen wie das Programm - sonst zeigt die Mappe
+    # andere Zahlen als das Tool, und zwar unbemerkt.
+    regel = mapping.get("kostenart_praefix_regel", {})
+    ws.cell(row=1, column=9, value="Auffangregel: Konto beginnt mit").font = Font(bold=True)
+    ws.cell(row=1, column=10, value="Zeile").font = Font(bold=True)
+    ws.cell(row=1, column=11, value="Vorzeichen").font = Font(bold=True)
+    for i, (praefix, r) in enumerate(sorted(regel.items()), start=2):
+        ws.cell(row=i, column=9, value=praefix)
+        ws.cell(row=i, column=10, value=r["zeile"])
+        ws.cell(row=i, column=11, value=r["sign"])
+    ws.cell(row=len(regel) + 3, column=9, value=(
+        "Greift nur, wenn links kein Einzeleintrag passt. Gilt fuer Konten, die in der "
+        "Einzelliste fehlen, weil sie im Kalibrierungszeitraum nicht vorkamen."
+    )).font = Font(italic=True, size=9)
+    for sp, br in (("I", 30), ("J", 14), ("K", 11)):
+        ws.column_dimensions[sp].width = br
+    n = max(len(regel), 1)
+    return ws, (f"Mapping!$G$2:$G${len(produktgruppen) + 1}", f"Mapping!$I$2:$K${n + 1}")
 
 
-def _kptm_blatt(wb, df, mapping, pg_liste):
+def _kptm_blatt(wb, df, mapping, bereiche):
     """Der KPTM-Export mit vier Hilfsspalten, die selbst Formeln sind.
 
     Dadurch ist die Zuordnung nicht das Ergebnis eines unsichtbaren Programmschritts,
@@ -141,16 +160,20 @@ def _kptm_blatt(wb, df, mapping, pg_liste):
     wertart = mapping.get("kostenstellen_wertart", "ISWF")
     fracht = mapping.get("umbuchung_fracht_suffix", "0100")
 
+    pg_bereich, regel_bereich = bereiche
     for r in range(erste, letzte + 1):
+        # Reihenfolge wie im Programm: Einzeleintrag, dann Kostenstelle, dann Auffangregel.
         ws.cell(row=r, column=basis + 1, value=(
             f'=IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,2,FALSE),'
             f'IF(AND(LEFT(TEXT({s_ka}{r},"@"),{len(prefix)})="{prefix}",'
-            f'{s_wa}{r}="{wertart}"),"fek",""))'))
+            f'{s_wa}{r}="{wertart}"),"fek",'
+            f'IFERROR(VLOOKUP(LEFT(TEXT({s_ka}{r},"@"),1),{regel_bereich},2,FALSE),"")))'))
         ws.cell(row=r, column=basis + 2, value=(
-            f'=IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,4,FALSE),1)'))
+            f'=IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,4,FALSE),'
+            f'IFERROR(VLOOKUP(LEFT(TEXT({s_ka}{r},"@"),1),{regel_bereich},3,FALSE),1))'))
         ws.cell(row=r, column=basis + 3, value=(
             f'=IF(IFERROR(VLOOKUP(TEXT({s_ka}{r},"@"),Mapping!$A:$E,5,FALSE),"")="fracht",'
-            f'IF(COUNTIF({pg_liste},LEFT({s_pg}{r},2)&"{fracht}")>0,'
+            f'IF(COUNTIF({pg_bereich},LEFT({s_pg}{r},2)&"{fracht}")>0,'
             f'LEFT({s_pg}{r},2)&"{fracht}",{s_pg}{r}),{s_pg}{r})'))
         z = ws.cell(row=r, column=basis + 4, value=f'={c_vz}{r}*{s_wert}{r}')
         z.number_format = "#,##0.00"
@@ -229,8 +252,8 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
 
     Gibt die Anzahl verformelter Zellen zurueck.
     """
-    _, pg_liste = _mapping_blatt(wb, mapping, produktgruppen)
-    kptm = _kptm_blatt(wb, kptm_df, mapping, pg_liste)
+    _, bereiche = _mapping_blatt(wb, mapping, produktgruppen)
+    kptm = _kptm_blatt(wb, kptm_df, mapping, bereiche)
 
     # Die beiden Nachschlagetabellen muessen VOR den PWBS-Blaettern stehen,
     # weil deren Sparten-Formel hier hineinschlaegt.

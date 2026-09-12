@@ -246,5 +246,12 @@
     "SRL"
   ],
   "auftragsart_hinweis": "Auftragsart '5' sind Kostenstellen-Sammelauftraege; die darauf gebuchten Fertigungsstunden gelten als unproduktive Gemeinkosten. Verifiziert an Q1 2026: centgenau die Groesse 'davon (unproduktive) Gemeinkosten' aus der manuellen Zusatzauswertung des Controllings, 14 von 14 Kostenstellen. Die uebrigen Auftragsarten trennen Lager- von Kundenauftraegen.",
-  "kostenstellen_hinweis": "Kostenarten mit Praefix 'K2' (z.B. K210000 Konstruktion) sind Fertigungskostenstellen aus KPTM (Wertart ISWF=Ist-Wert, ISMF=Ist-Menge/Stunden). Diese ergeben den GESAMTEN Ist-Fertigungswert, NICHT direkt die Zeile 'FEK' der Spartenrechnung - die Original-Datei verwendet fuer FEK einen Standardkosten-Ansatz (Menge x Stundensatz, siehe betriebsparameter.json) getrennt nach produktiv/Lager/Kundenauftrag. Der volle Ist-Wert wird zur Information trotzdem ausgegeben (Zeile 'fek' Tier1.5)."
+  "kostenstellen_hinweis": "Kostenarten mit Praefix 'K2' (z.B. K210000 Konstruktion) sind Fertigungskostenstellen aus KPTM (Wertart ISWF=Ist-Wert, ISMF=Ist-Menge/Stunden). Diese ergeben den GESAMTEN Ist-Fertigungswert, NICHT direkt die Zeile 'FEK' der Spartenrechnung - die Original-Datei verwendet fuer FEK einen Standardkosten-Ansatz (Menge x Stundensatz, siehe betriebsparameter.json) getrennt nach produktiv/Lager/Kundenauftrag. Der volle Ist-Wert wird zur Information trotzdem ausgegeben (Zeile 'fek' Tier1.5).",
+  "kostenart_praefix_regel": {
+    "6": {
+      "zeile": "sba",
+      "sign": 1
+    }
+  },
+  "kostenart_praefix_regel_hinweis": "Auffangregel fuer Kostenarten, die nicht einzeln gemappt sind. Noetig, weil die Einzelliste nur die Konten kennt, die im Kalibrierungszeitraum Q1 2026 vorkamen - in Jan-Juli tauchten sieben weitere 6er-Konten auf (Kfz, Uebernachtung, Gewaehrleistung, Provisionen, Bankgebuehren, sonstige Kosten), zusammen 30.297 EUR, die sonst stillschweigend unter den Tisch gefallen waeren. Belegt: von allen 6xxxxx-Konten mit Produktgruppe geht jedes einzelne auf 'sba' (7 von 7 in der Einzelliste). Die Regel greift NUR, wenn kein Einzeleintrag passt, und bucht nicht um - eine Fracht-Umbuchung muss weiterhin einzeln hinterlegt werden. Per Regel zugeordnete Konten werden im Ergebnis ausgewiesen, damit sie nicht unbemerkt bleiben."
 }
