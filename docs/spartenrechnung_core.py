@@ -58,12 +58,12 @@ def ermittle_stundensatz(df, mapping):
     ISWF = Ist-Wert in EUR und ISMF = Ist-Menge in Stunden. Es gilt
     ISWF = ISMF x Satz, der Satz ist also schlicht ISWF / ISMF.
 
-    Geprueft an Q1 2026: bei allen 14 Fertigungskostenstellen derselbe Satz
-    identisch (keine Abweichung ueber 1 Cent). Deshalb muss der Satz nirgends
-    hinterlegt werden - er kommt aus den Daten, die ohnehin hochgeladen werden.
-    Das ist auch der sicherere Weg: der Satz ist Kalkulationsinnenleben, aus dem
-    sich die Preisbildung zurueckrechnen laesst, und steht so an keiner Stelle
-    gespeichert.
+    Geprueft an Q1 2026: bei allen 14 Fertigungskostenstellen derselbe Satz, keine
+    Abweichung ueber 1 Cent. Deshalb muss er nirgends hinterlegt werden - er kommt
+    aus den Daten, die ohnehin hochgeladen werden. Das ist auch der sicherere Weg:
+    der Satz ist Kalkulationsinnenleben, aus dem sich die Preisbildung zurueckrechnen
+    laesst, und steht so an keiner Stelle gespeichert. (Der konkrete Wert gehoert
+    deshalb auch nicht in diesen Kommentar - er steht in intern/HERLEITUNG.md.)
     """
     kst = df[df["Kostenart"].str.startswith(mapping["kostenstellen_praefix"])]
     wert = kst[kst["Wertart"] == mapping.get("kostenstellen_wertart", "ISWF")]["Wert/Menge"].sum()
