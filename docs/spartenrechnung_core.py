@@ -367,10 +367,12 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
         anfang = anfangsbestand
     else:
         warnungen.append(
-            f"Kein Anfangsbestand fuer das Geschaeftsjahr {jahr or '(unbekannt)'} hinterlegt. "
-            f"Abhilfe: entweder einen PWBS-Export zum Periodenbeginn (Stichtag 01.01.) zusaetzlich "
-            f"hochladen, oder den Anfangsbestand einmalig in config/werkstattbestand_anfang.json "
-            f"ergaenzen. Fuer 2026 ist er bereits hinterlegt."
+            f"Kein Anfangsbestand fuer das Geschaeftsjahr {jahr or '(unbekannt)'}. Abhilfe: den "
+            f"PWBS-Export mit Stichtag 01.01.{jahr or 'JJJJ'} im Feld 'Werkstattbestand - "
+            f"Periodenbeginn' zusaetzlich hochladen. Das ist derselbe Report wie der monatliche, "
+            f"nur mit anderem Stichtag; beim Abschluss des Januars brauchen Sie ihn ohnehin. "
+            f"Danach zeigt das Tool die errechneten Werte an, damit sie fuer die restlichen "
+            f"Monate des Jahres hinterlegt werden koennen."
         )
         return None, warnungen, statistik
 
@@ -378,6 +380,10 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
         return None, warnungen, statistik
 
     werte = {pg: ende.get(pg, 0.0) - anfang.get(pg, 0.0) for pg in set(anfang) | set(ende)}
+    # Der Bestand zum Stichtag ist zugleich der Anfangsbestand der Folgeperiode.
+    # Faellt der Stichtag auf den 01.01., ist es der des naechsten Geschaeftsjahres -
+    # damit schreibt sich die Jahreskonstante aus den Daten selbst fort.
+    statistik["bestand_stichtag"] = {pg: round(v, 2) for pg, v in sorted(ende.items())}
     return werte, warnungen, statistik
 
 
@@ -812,6 +818,7 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
 
     return {
         "zeilen": len(df),
+        "zeitraum": zeitraum,
         "produktgruppen": produktgruppen,
         "unbekannte_produktgruppen": unbekannte_pg,
         "unbekannte_kostenarten": sorted(unmapped),

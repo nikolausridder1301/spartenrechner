@@ -370,6 +370,25 @@ function showResult(summary, url, filename) {
       html += `<div class="summary-line"><span>davon von Hand zugeordnet</span><span>${bereits} Aufträge</span></div>`;
     }
 
+    // Der Bestand zum Stichtag ist der Anfangsbestand der Folgeperiode. Faellt der
+    // Stichtag auf den 01.01., ist es die Jahreskonstante des naechsten Jahres -
+    // dann muss sie nicht von Hand gepflegt werden, sondern faellt hier heraus.
+    if (stat.bestand_stichtag && Object.keys(stat.bestand_stichtag).length) {
+      const inhalt = JSON.stringify(
+        { _hinweis: `Werkstattbestand je Sparte zum Stichtag "${summary.zeitraum || ""}", `
+            + "erzeugt vom Spartenrechner. Als Anfangsbestand des Folgejahres verwendbar, "
+            + "wenn der Stichtag der 01.01. ist.",
+          anfangsbestand: { "JAHR_EINTRAGEN": stat.bestand_stichtag } }, null, 2);
+      const paramUrl = URL.createObjectURL(new Blob([inhalt], { type: "application/json" }));
+      html += `<details class="zuordnung"><summary>Werkstattbestand als Betriebsparameter sichern</summary>`;
+      html += `<p class="hinweis">Der hier errechnete Bestand ist zugleich der
+        <strong>Anfangsbestand der Folgeperiode</strong>. Wenn Sie den Abschluss zum
+        <strong>01.01.</strong> rechnen, ist das die Jahreskonstante des neuen Jahres –
+        speichern, Jahreszahl eintragen, fertig. Dann muss nichts von Hand gepflegt werden.</p>`;
+      html += `<a class="download-btn" style="margin-top:0" href="${paramUrl}"
+        download="betriebsparameter_neu.json">⬇ betriebsparameter_neu.json</a></details>`;
+    }
+
     if (stat.offene_auftraege && stat.offene_auftraege.length) {
       const optionen = (summary.produktgruppen_auswahl || [])
         .map((p) => `<option value="${p}">${p}</option>`).join("");

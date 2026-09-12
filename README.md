@@ -116,6 +116,25 @@ der kommt unverändert aus der PWBS. Er sagt nur, *wozu* die Aufträge gehören.
 Dauerhaft löst das eine zusätzliche Spalte im PWBS-Export (siehe unten) – dann
 entfällt die Handarbeit vollständig.
 
+### Der Anfangsbestand: einmal im Jahr, aus dem ERP
+
+Die UFE-Zeile ist `Bestand(Stichtag) − Bestand(01.01.)`. Den Stichtagswert rechnet
+das Tool aus der PWBS-Datei; den Wert zum 01.01. bildet keiner der Exporte ab,
+weil alle am 01.01. *beginnen*. Er ist als Jahreskonstante hinterlegt.
+
+Von Hand pflegen muss man ihn trotzdem nicht:
+
+1. Beim **Abschluss des Januars** brauchen Sie ohnehin den Bestand zum 01.01. –
+   laden Sie den PWBS-Export mit diesem Stichtag im Feld „Periodenbeginn" hoch.
+   Es ist derselbe Report wie der monatliche, nur mit anderem Datum.
+2. Das Tool zeigt danach unter **„Werkstattbestand als Betriebsparameter sichern"**
+   den errechneten Bestand als fertige Datei an. Einmal speichern – damit sind die
+   restlichen elf Monate versorgt, ohne die Datei jedes Mal mitzuladen.
+
+Geprüft: Der so ausgegebene Bestand ist als Anfangsbestand der Folgeperiode
+centgenau verwendbar (`UFE(Jan–Jun) = UFE(Q1) + [Bestand(01.07.) − Bestand(01.04.)]`,
+Abweichung 0,00 € über alle 14 Sparten).
+
 ## Was beim Controlling angefragt werden müsste
 
 Drei Punkte würden die verbleibenden Lücken schließen:
