@@ -181,21 +181,20 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   font-weight: 600;
 }
 
-/* Betriebsparameter: Status, ob die lokalen Werte hinterlegt sind */
+/* Betriebsparameter: Status, ob die lokalen Werte hinterlegt sind. Die Box
+   darunter setzt sich schon farblich ab - eine zusaetzliche Pille waere hier
+   zu viel; deshalb nur eingefaerbter Text statt eines Badges mit Hintergrund. */
 .param-badge {
+  /* inline-block, nicht inline: max-width/overflow/ellipsis greifen sonst nicht -
+     ohne das laeuft der lange "hinterlegt: ..."-Text auf dem Telefon ueber den
+     Rand hinaus, statt abgeschnitten zu werden. */
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
   margin-left: 0.4rem;
-  background: var(--gelb-bg);
   color: var(--gelb-text);
-  /* Die Pille darf nicht in sich umbrechen; im hinterlegten Zustand wird der Text
-     lang ("hinterlegt: Stundensatz - Anfangsbestand 2026") und passt auf dem
-     Telefon sonst nicht mehr in die Zeile. */
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
@@ -203,17 +202,19 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   vertical-align: bottom;
 }
 
-.param-badge.ok { background: var(--gruen-bg); color: var(--gruen-text); }
+.param-badge.ok { color: var(--gruen-text); }
 
 /* Anfangsbestand: zwei gleichwertige Wege (PWBS-Export oder gespeicherte
    Parameterdatei) zu EINEM Ziel - deshalb als ein Kaestchen gerahmt statt als
    zwei getrennte Felder, und ohne <details>, damit der Ablauf nicht durch einen
-   weiteren Klick unterbrochen wird. Gleicher Stil wie .zuordnung weiter unten. */
+   weiteren Klick unterbrochen wird. Farbe = Seitenhintergrund, damit sich das
+   Kaestchen sichtbar vom weissen Formular abhebt (vorher kaum vom Weiss zu
+   unterscheiden). */
 .anfangsbestand-box {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.9rem 1rem 1rem;
-  background: #fbfcfd;
+  background: var(--bg);
 }
 
 .anfangsbestand-intro {
