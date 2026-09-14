@@ -119,7 +119,9 @@ h1, h2 { margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
 
 .status-box.error { background: var(--rot-bg); border-color: #f5c2c0; color: var(--rot-text); }
 
-.field { margin-bottom: 1.25rem; }
+/* Mehr Luft zur naechsten Ueberschrift, damit ein Feld sich klar von seinem
+   Vorgaenger absetzt, statt an dessen Upload-Box zu kleben. */
+.field { margin-bottom: 2rem; }
 
 .field label {
   display: block;
@@ -203,26 +205,58 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
 
 .param-badge.ok { background: var(--gruen-bg); color: var(--gruen-text); }
 
-#parameter-field .hinweis {
+/* Anfangsbestand: zwei gleichwertige Wege (PWBS-Export oder gespeicherte
+   Parameterdatei) zu EINEM Ziel - deshalb als ein Kaestchen gerahmt statt als
+   zwei getrennte Felder, und ohne <details>, damit der Ablauf nicht durch einen
+   weiteren Klick unterbrochen wird. Gleicher Stil wie .zuordnung weiter unten. */
+.anfangsbestand-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1rem 1rem;
+  background: #fbfcfd;
+}
+
+.anfangsbestand-intro {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.oder-trenner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.7rem 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.oder-trenner::before, .oder-trenner::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.anfangsbestand-box .hinweis {
   font-size: 0.8rem;
   color: var(--text-muted);
   line-height: 1.5;
-  margin: 0 0 0.6rem;
+  margin: 0.7rem 0 0;
   font-weight: 400;
 }
 
-#parameter-field .dropzone { padding: 0.9rem 1rem; }
-/* Die ID oben wiegt schwerer als '.dropzone.schmal' - deshalb hier mitfuehren. */
-#parameter-field .dropzone.schmal { padding: 0.55rem 1rem; font-size: 0.82rem; }
+.anfangsbestand-box .dropzone { padding: 0.9rem 1rem; }
 
 #param-loeschen {
-  margin-top: 0.5rem;
-  padding: 0.35rem 0.7rem;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.5rem;
   background: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -237,8 +271,56 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   margin-left: 0.35rem;
 }
 
-/* Zweitrangige Ablage (hinterlegte Parameter statt Datei): flacher als die uebrigen. */
-.dropzone.schmal { padding: 0.7rem 1rem; font-size: 0.82rem; }
+/* Kleines "?" neben jeder Feldueberschrift: Woher/Was/Warum auf Hover, Fokus
+   oder Tippen (fuer Touch, wo es kein Hover gibt). */
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.info-icon:hover, .info-icon:focus, .info-icon.open {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.info-tooltip {
+  position: fixed;
+  z-index: 40;
+  background: var(--dark);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.info-tooltip strong {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9fb4d8;
+  margin: 0.6rem 0 0.15rem;
+}
+.info-tooltip strong:first-child { margin-top: 0; }
 
 button[type="submit"] {
   width: 100%;

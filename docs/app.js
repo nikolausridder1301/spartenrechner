@@ -71,6 +71,117 @@ setupDropzone("dropzone-pwbs-e", "dropzone-pwbs-e-text", "file-pwbs-e", (file, z
   });
 })();
 
+/* Kurze Erklaerung je Feld ("?"-Symbol neben der Ueberschrift): woher die Datei
+   kommt, was sie enthaelt und wozu sie gebraucht wird - fuer alle, die die
+   ERP-Exportnamen nicht auswendig kennen. Ein einziges, wiederverwendetes
+   Tooltip-Element statt eines pro Icon, damit die Positionierung an einer
+   Stelle berechnet wird und auf jedem Bildschirm im sichtbaren Bereich bleibt. */
+const INFO_TEXTE = {
+  "kptm": `<strong>Woher</strong>Export aus dem ERP-System (Penta/APplus) &ndash; die SQL-Abfrage
+    &bdquo;KPTM_Wertsummen&ldquo;.
+    <strong>Was</strong>Alle Buchungen (Erl&ouml;se, Material, L&ouml;hne, &hellip;) je Kostenart und
+    Fertigungsauftrag, kumuliert seit Jahresbeginn bis zum gew&uuml;nschten Stichtag.
+    <strong>Warum</strong>Grundlage der gesamten Rechnung &ndash; daraus werden Erl&ouml;se, Kosten
+    und Deckungsbeitr&auml;ge je Sparte berechnet.`,
+  "pwbs-ende": `<strong>Woher</strong>ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;, Stichtag = letzter
+    Tag des Auswertungszeitraums.
+    <strong>Was</strong>Alle Fertigungsauftr&auml;ge, die an diesem Stichtag noch nicht fertiggemeldet
+    sind, mit ihrem bisher aufgelaufenen Wert (unfertige Erzeugnisse).
+    <strong>Warum</strong>Ohne diese Datei fehlt die Zeile &bdquo;Bestandsver&auml;nderung UFE&ldquo; &ndash;
+    Betriebsleistung und Rohmarge w&auml;ren unvollst&auml;ndig.`,
+  "pfak": `<strong>Woher</strong>ERP-Export &bdquo;PFAK_Fertigungsauftragskopf&ldquo; &ndash; m&ouml;glichst
+    die neueste vorhandene Datei.
+    <strong>Was</strong>Stammdaten zu allen Fertigungsauftr&auml;gen, u.&nbsp;a. welcher Sparte
+    (Produktgruppe) jeder Auftrag zugeordnet ist.
+    <strong>Warum</strong>Ordnet die offenen Auftr&auml;ge aus dem Werkstattbestand einer Sparte zu.
+    Je neuer die Datei, desto mehr Auftr&auml;ge sind bereits fertiggemeldet und damit eindeutig
+    zuordenbar.`,
+  "anfangsbestand": `<strong>Woher</strong>Entweder ein weiterer ERP-Export
+    &bdquo;PWBS_Werkstattbestand&ldquo; mit Stichtag 01.01., oder &ndash; einfacher &ndash; eine schon
+    einmal gesicherte Datei betriebsparameter.xlsx.
+    <strong>Was</strong>Der Werkstattbestand zu Jahresbeginn, also der Startwert f&uuml;r das laufende
+    Gesch&auml;ftsjahr.
+    <strong>Warum</strong>Ohne diesen Startwert l&auml;sst sich die Ver&auml;nderung des Bestands im
+    Jahresverlauf nicht berechnen &ndash; der Endwert allein reicht nicht.`,
+};
+
+(() => {
+  const tooltip = document.createElement("div");
+  tooltip.className = "info-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+  let aktivesIcon = null;
+
+  function positionieren(icon) {
+    const r = icon.getBoundingClientRect();
+    const breite = Math.min(300, window.innerWidth - 24);
+    tooltip.style.width = breite + "px";
+    let left = Math.min(r.left, window.innerWidth - breite - 12);
+    left = Math.max(12, left);
+    tooltip.style.left = left + "px";
+    // Hoehe haengt vom Zeilenumbruch ab, der wiederum von der eben gesetzten
+    // Breite abhaengt - deshalb erst hier messen, nicht mit einer festen Zahl raten.
+    const hoehe = tooltip.offsetHeight;
+    const platzUnten = window.innerHeight - r.bottom;
+    let top;
+    if (platzUnten >= hoehe + 12) {
+      top = r.bottom + 8;
+    } else if (r.top >= hoehe + 12) {
+      top = r.top - 8 - hoehe;
+    } else {
+      // Passt weder oben noch unten vollstaendig (sehr niedriger Bildschirm):
+      // so gut wie moeglich platzieren und am Rand nicht abschneiden lassen.
+      top = Math.max(12, Math.min(r.bottom + 8, window.innerHeight - hoehe - 12));
+    }
+    tooltip.style.top = top + "px";
+  }
+
+  function zeigen(icon) {
+    const text = INFO_TEXTE[icon.dataset.info];
+    if (!text) return;
+    tooltip.innerHTML = text;
+    tooltip.hidden = false;
+    aktivesIcon = icon;
+    positionieren(icon);
+  }
+
+  function verstecken(icon) {
+    if (icon && icon.classList.contains("open")) return;   // per Klick offen gehalten
+    tooltip.hidden = true;
+    aktivesIcon = null;
+  }
+
+  document.querySelectorAll(".info-icon").forEach((icon) => {
+    icon.addEventListener("mouseenter", () => zeigen(icon));
+    icon.addEventListener("mouseleave", () => verstecken(icon));
+    icon.addEventListener("focus", () => zeigen(icon));
+    icon.addEventListener("blur", () => verstecken(icon));
+    icon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const warOffen = icon.classList.contains("open");
+      document.querySelectorAll(".info-icon.open").forEach((o) => o.classList.remove("open"));
+      if (warOffen) {
+        icon.classList.remove("open");
+        verstecken(null);
+      } else {
+        icon.classList.add("open");
+        zeigen(icon);
+      }
+    });
+    icon.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); icon.click(); }
+      if (e.key === "Escape") { icon.classList.remove("open"); verstecken(null); icon.blur(); }
+    });
+  });
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".info-icon.open").forEach((o) => o.classList.remove("open"));
+    verstecken(null);
+  });
+  window.addEventListener("scroll", () => { if (aktivesIcon) positionieren(aktivesIcon); }, true);
+  window.addEventListener("resize", () => { if (aktivesIcon) positionieren(aktivesIcon); });
+})();
+
 /* Betriebsparameter (Stundensatz, Anfangsbestaende).
    Bewusst nicht im Repository - das ist oeffentlich, und aus dem Stundensatz liesse
    sich die Preisbildung zurueckrechnen. Stattdessen legt der Nutzer die Datei einmal
@@ -240,6 +351,10 @@ form.addEventListener("submit", async (e) => {
   }
   if (!pwbsEndeFile) {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
+    return;
+  }
+  if (!pfakFiles.length) {
+    showError("Bitte die PFAK-Daten auswählen (die aktuellste vorliegende Datei).");
     return;
   }
 
