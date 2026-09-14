@@ -239,6 +239,17 @@ json.dumps(spartenrechnung_core.betriebsparameter_aus_excel("/param_upload${ext}
       + `die Spalten Sparte, Geschäftsjahr und Anfangsbestand.`);
     return;
   }
+  // Die heruntergeladene Vorlage hat dieselben Spalten, nur mit Nullen. Ungefüllt
+  // hochgeladen ergäbe sie eine Bestandsveränderung in Höhe des vollen Endbestands –
+  // eine Zahl, die plausibel aussieht und um den ganzen Anfangsbestand danebenliegt.
+  const werteAlleJahre = Object.values(geparst.anfangsbestand)
+    .flatMap((proJahr) => Object.values(proJahr || {}));
+  if (!werteAlleJahre.some((w) => Math.abs(w) > 0.005)) {
+    showError(`„${file.name}" enthält nur Nullen – das ist die unausgefüllte Vorlage. `
+      + `Bitte je Sparte den Werkstattbestand zum 01.01. eintragen, sonst zeigt die Zeile `
+      + `„Bestandsveränderung UFE" den vollen Endbestand statt der Veränderung.`);
+    return;
+  }
   try {
     localStorage.setItem(PARAM_KEY, inhalt);
   } catch (e) {
@@ -248,6 +259,10 @@ json.dumps(spartenrechnung_core.betriebsparameter_aus_excel("/param_upload${ext}
   parameterInDateisystem();
   zone.classList.add("has-file");
   text.textContent = "✓ " + file.name;
+  // Eine vorherige Fehlermeldung wegräumen - sonst steht nach dem Nachreichen der
+  // richtigen Datei noch die Absage zur falschen da und sieht aus, als sei auch
+  // diese abgelehnt worden.
+  errorBox.style.display = "none";
   parameterStatusZeigen();
 });
 

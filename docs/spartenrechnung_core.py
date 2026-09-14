@@ -670,6 +670,20 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
             )
     elif anfangsbestand:
         anfang = anfangsbestand
+        # Die mitgelieferte Excel-Vorlage hat dieselben Spalten wie eine gepflegte
+        # Datei, nur mit Nullen. Ungefuellt hochgeladen sieht sie wie ein
+        # Anfangsbestand von 0,00 aus: die Zeile zeigt dann den vollen Endbestand
+        # statt der Veraenderung - eine plausibel aussehende Zahl, die um den
+        # gesamten Anfangsbestand danebenliegt. Deshalb hier abbrechen.
+        if not any(abs(w) > 0.005 for w in anfang.values()):
+            warnungen.append(
+                f"Der hinterlegte Anfangsbestand ist durchgehend 0,00 EUR - das ist die "
+                f"unausgefuellte Vorlage, keine gepflegten Werte. Gerechnet wuerde sonst "
+                f"{sum(ende.values()):,.2f} EUR, also der volle Endbestand statt der "
+                f"Veraenderung. Abhilfe: in der Vorlage je Sparte den Werkstattbestand "
+                f"zum 01.01. eintragen, oder stattdessen den PWBS-Export mit Stichtag "
+                f"01.01. in dasselbe Feld laden."
+            )
     else:
         warnungen.append(
             f"Kein Anfangsbestand fuer das Geschaeftsjahr {jahr or '(unbekannt)'}. Abhilfe: den "
@@ -686,6 +700,21 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
 
     hinweise = statistik["hinweise"]
     werte = {pg: ende.get(pg, 0.0) - anfang.get(pg, 0.0) for pg in set(anfang) | set(ende)}
+
+    # Derselbe Fehler in klein: ist der Anfangsbestand nur fuer einen Teil der
+    # Sparten gepflegt, zeigen die uebrigen den vollen Endbestand statt der
+    # Veraenderung. Das faellt in der Summe nicht auf, verfaelscht aber genau die
+    # betroffenen Sparten - deshalb namentlich nennen.
+    ohne_anfang = sorted(pg for pg, wert in ende.items()
+                         if abs(wert) > 0.005 and abs(anfang.get(pg, 0.0)) <= 0.005)
+    if ohne_anfang:
+        hinweise.append(
+            f"Fuer {len(ohne_anfang)} Sparte(n) ist kein Anfangsbestand hinterlegt: "
+            f"{', '.join(ohne_anfang[:6])}{' ...' if len(ohne_anfang) > 6 else ''}. "
+            f"Deren Zeile zeigt deshalb den vollen Endbestand statt der Veraenderung. "
+            f"Richtig ist das nur, wenn die Sparte am 01.01. tatsaechlich keinen "
+            f"Werkstattbestand hatte (z.B. erst danach eingefuehrt)."
+        )
 
     # Die Prozentschwelle schuetzt die Summe, nicht die einzelne Sparte. Die nicht
     # zuordenbaren Auftraege verteilen sich nicht gleichmaessig - erfahrungsgemaess
