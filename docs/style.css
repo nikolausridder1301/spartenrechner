@@ -171,6 +171,12 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   font-size: 0.88rem;
 }
 
+/* Innerhalb der gelblichen Anfangsbestand-Box bleiben die Ablageflaechen selbst
+   weiss wie ueberall sonst im Formular - nur die Box drumherum ist eingefaerbt.
+   Muss vor :hover/.has-file stehen: gleiche Spezifitaet, sonst wuerde diese
+   Grundfarbe die Hover-/Erfolgsfarbe dort ueberschreiben. */
+.anfangsbestand-box .dropzone { background: var(--surface); }
+
 .dropzone:hover, .dropzone.dragover { background: var(--accent-bg); border-color: var(--accent); }
 
 .dropzone.has-file {
@@ -192,7 +198,10 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   border: 1px solid #f0dca6;
   border-radius: var(--radius-sm);
   padding: 0.9rem 1rem 1rem;
-  background: var(--gelb-bg);
+  /* Blasser als .warning-box - halbtransparent auf Weiss, damit es als sanfter
+     Hinweiston wirkt statt als Warnung. Der Rand bleibt kraeftiger, damit die
+     Box trotzdem klar umrissen ist. */
+  background: rgba(253, 236, 200, 0.45);
 }
 
 .anfangsbestand-intro {
