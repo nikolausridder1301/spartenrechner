@@ -65,8 +65,8 @@ h1, h2 { margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
 .header-title h1 { margin: 0; font-size: 1.35rem; }
 
 .header-logo {
-  height: 44px;
-  width: 44px;
+  height: 72px;
+  width: 72px;
   object-fit: cover;
   border-radius: 50%;
   flex-shrink: 0;
