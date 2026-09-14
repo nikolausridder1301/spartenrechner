@@ -361,6 +361,58 @@ def _jahr_aus_zeitraum(zeitraum):
     return treffer[-1] if treffer else None
 
 
+# Schreibweise wie in der Referenzmappe des Controllings ("Spartenrechnung
+# Jan-März 2026"), damit die erzeugte Datei neben deren Blättern nicht auffaellt.
+_MONATE = ["Jan", "Feb", "März", "Apr", "Mai", "Juni",
+           "Juli", "Aug", "Sep", "Okt", "Nov", "Dez"]
+
+
+def _zeitraum_aus_dateiname(kptm_path):
+    """Rueckfall, wenn der Export keine Periodenspalten mitbringt: der ERP-Export
+    traegt den Zeitraum im Namen, z.B. 'KPTM_Wertsummen_01-0326' -> 01 bis 03/2026."""
+    treffer = re.search(r"(\d{2})-(\d{2})(\d{2})", os.path.basename(str(kptm_path or "")))
+    if not treffer:
+        return None
+    von, bis, jj = (int(g) for g in treffer.groups())
+    if not (1 <= von <= bis <= 12):
+        return None
+    return von, bis, 2000 + jj, 2000 + jj
+
+
+def _perioden_aus_daten(df):
+    """Welche Buchungsperioden stecken im Export? Gibt (von, bis, jahr_von, jahr_bis)."""
+    if "Periode" not in df.columns or "Geschäftsjahr" not in df.columns:
+        return None
+    perioden = pd.to_numeric(df["Periode"], errors="coerce").dropna()
+    jahre = pd.to_numeric(df["Geschäftsjahr"], errors="coerce").dropna()
+    # Periode 0 und 13 sind Eroeffnungs- bzw. Abschlussbuchungen, keine Monate.
+    perioden = perioden[(perioden >= 1) & (perioden <= 12)]
+    if perioden.empty or jahre.empty:
+        return None
+    return (int(perioden.min()), int(perioden.max()),
+            int(jahre.min()), int(jahre.max()))
+
+
+def zeitraum_aus_daten(df, kptm_path=None):
+    """Leitet den Auswertungszeitraum aus dem Export ab.
+
+    Frueher musste er von Hand eingetippt werden - eine Fehlerquelle ohne Nutzen:
+    die Rohdaten wissen selbst, welche Perioden sie enthalten, ein Tippfehler stand
+    dagegen anschliessend als Ueberschrift in der Mappe.
+
+    Rueckgabe: (Anzeigetext, Dateiname), z.B. ('Jan-März 2026',
+    'Spartenrechnung_2026_01-03.xlsx').
+    """
+    spanne = _perioden_aus_daten(df) or _zeitraum_aus_dateiname(kptm_path)
+    if not spanne:
+        return "Zeitraum unbekannt", "Spartenrechnung.xlsx"
+    von, bis, jahr_von, jahr_bis = spanne
+    jahr = str(jahr_bis) if jahr_von == jahr_bis else f"{jahr_von}/{jahr_bis}"
+    monate = _MONATE[von - 1] if von == bis else f"{_MONATE[von - 1]}-{_MONATE[bis - 1]}"
+    kurz = f"{von:02d}" if von == bis else f"{von:02d}-{bis:02d}"
+    return f"{monate} {jahr}", f"Spartenrechnung_{jahr_bis}_{kurz}.xlsx"
+
+
 def geschaeftsjahr(df, zeitraum=None):
     """Bestimmt das Geschaeftsjahr der Auswertung.
 
@@ -1270,14 +1322,19 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
     wb.save(out_path)
 
 
-def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet=None,
+def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_sheet=None,
              pwbs_anfang=None, pwbs_ende=None, pfak_pfade=None, manuelle_zuordnung=None):
     """Ein-Funktions-Einstieg fuer die Weboberflaeche: liest KPTM (+optional BWA,
     +optional Werkstattbestand fuer die Bestandsveraenderung UFE), berechnet die
     Spartenrechnung und schreibt die Ausgabedatei. Gibt eine kurze Zusammenfassung
-    (dict) zurueck, u.a. fuer Warnungen zu unbekannten Kostenarten/Produktgruppen."""
+    (dict) zurueck, u.a. fuer Warnungen zu unbekannten Kostenarten/Produktgruppen.
+
+    'zeitraum' ist nur noch ein Ueberschreiben von Hand; ohne Angabe wird er aus den
+    Periodenspalten des Exports gelesen (siehe zeitraum_aus_daten)."""
     mapping, pg_config = load_config(config_dir)
     df = load_kptm(kptm_path)
+    abgeleitet, dateiname = zeitraum_aus_daten(df, kptm_path)
+    zeitraum = zeitraum or abgeleitet
     # Der Stundensatz wird aus den Rohdaten errechnet, nicht gepflegt (siehe
     # ermittle_stundensatz). Ein hinterlegter Wert dient nur noch als Rueckfall.
     satz = ermittle_stundensatz(df, mapping)
@@ -1335,6 +1392,10 @@ def generate(kptm_path, config_dir, zeitraum, out_path, bwa_path=None, bwa_sheet
     return {
         "zeilen": len(df),
         "zeitraum": zeitraum,
+        "dateiname": dateiname,
+        # Aus den Rohdaten, nicht aus dem Zeitraum-Text gelesen: die Oberflaeche
+        # braucht das Jahr, um den Werkstattbestand als Jahreskonstante abzulegen.
+        "jahr": jahr,
         "produktgruppen": produktgruppen,
         "unbekannte_produktgruppen": unbekannte_pg,
         "unbekannte_kostenarten": sorted(unmapped),

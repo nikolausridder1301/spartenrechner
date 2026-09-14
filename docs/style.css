@@ -179,27 +179,6 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   font-weight: 600;
 }
 
-/* Checkliste: was hochzuladen ist. Steht bewusst ganz oben - wer den Link
-   geteilt bekommt, soll ohne Rueckfrage wissen, welche Exporte er braucht. */
-.was-brauche-ich {
-  background: var(--accent-bg);
-  border: 1px solid #bcd4f7;
-  border-radius: var(--radius-sm);
-  padding: 0.85rem 1rem;
-  margin: 0 0 1.5rem;
-  font-size: 0.85rem;
-  line-height: 1.6;
-}
-
-.was-brauche-ich strong:first-child { display: block; margin-bottom: 0.4rem; }
-.was-brauche-ich span { display: block; }
-.was-brauche-ich code { font-family: var(--font-mono); font-size: 0.8rem; }
-.was-brauche-ich .nebenbei {
-  margin-top: 0.5rem;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
 /* Betriebsparameter: Status, ob die lokalen Werte hinterlegt sind */
 .param-badge {
   display: inline-block;
@@ -212,6 +191,14 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   margin-left: 0.4rem;
   background: var(--gelb-bg);
   color: var(--gelb-text);
+  /* Die Pille darf nicht in sich umbrechen; im hinterlegten Zustand wird der Text
+     lang ("hinterlegt: Stundensatz - Anfangsbestand 2026") und passt auf dem
+     Telefon sonst nicht mehr in die Zeile. */
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
 }
 
 .param-badge.ok { background: var(--gruen-bg); color: var(--gruen-text); }
@@ -225,6 +212,8 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
 }
 
 #parameter-field .dropzone { padding: 0.9rem 1rem; }
+/* Die ID oben wiegt schwerer als '.dropzone.schmal' - deshalb hier mitfuehren. */
+#parameter-field .dropzone.schmal { padding: 0.55rem 1rem; font-size: 0.82rem; }
 
 #param-loeschen {
   margin-top: 0.5rem;
@@ -240,32 +229,16 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
 
 #param-loeschen:hover { border-color: var(--rot-text); color: var(--rot-text); }
 
-.erweitert {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.9rem;
-  margin-bottom: 1.25rem;
-  background: #fbfcfd;
-}
-
-.erweitert > summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: var(--accent);
-  padding: 0.25rem 0;
-}
-
-.erweitert[open] > summary { margin-bottom: 0.75rem; }
-
-.erweitert .hinweis {
-  font-size: 0.8rem;
+/* Kurzer Zusatz am Feldnamen - ersetzt die frueheren Absaetze ueber dem Feld. */
+.feld-hinweis {
+  font-weight: 400;
+  font-size: 0.78rem;
   color: var(--text-muted);
-  line-height: 1.5;
-  margin: 0 0 1rem;
+  margin-left: 0.35rem;
 }
 
-.erweitert .dropzone { padding: 0.9rem 1rem; }
+/* Zweitrangige Ablage (hinterlegte Parameter statt Datei): flacher als die uebrigen. */
+.dropzone.schmal { padding: 0.7rem 1rem; font-size: 0.82rem; }
 
 button[type="submit"] {
   width: 100%;

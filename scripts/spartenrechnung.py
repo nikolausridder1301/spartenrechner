@@ -7,7 +7,7 @@ Kommandozeilen-Wrapper um docs/spartenrechnung_core.py (dieselbe Logik nutzt auc
 die Weboberflaeche unter docs/, dort per Pyodide direkt im Browser).
 
 Aufruf:
-    python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --zeitraum "Jan-Maerz 2026" --output output/2026-Q1-Spartenrechnung.xlsx
+    python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --output output/2026-Q1-Spartenrechnung.xlsx
 """
 import argparse
 import glob
@@ -37,7 +37,8 @@ def find_kptm_file(rohdaten_dir):
 def main():
     ap = argparse.ArgumentParser(description="Erzeugt automatisiert eine Spartenrechnung aus ERP-Rohdaten (KPTM_Wertsummen).")
     ap.add_argument("--rohdaten", required=True, help="Ordner mit den ERP-Rohdaten-Exporten fuer den Zeitraum")
-    ap.add_argument("--zeitraum", required=True, help="Anzeigetext, z.B. 'Jan-Maerz 2026'")
+    ap.add_argument("--zeitraum", help="Nur zum Ueberschreiben. Ohne Angabe wird der Zeitraum "
+                    "aus den Periodenspalten des KPTM-Exports gelesen.")
     ap.add_argument("--output", required=True, help="Pfad der zu erzeugenden Ausgabedatei (.xlsx)")
     ap.add_argument("--bwa", help="Optional: Pfad zur BWA-Arbeitsmappe fuer den automatischen GuV-Kontroll-Check")
     ap.add_argument("--bwa-sheet", help="Sheet-Name in der BWA-Datei, z.B. 'BWA 03.2026'")
@@ -58,12 +59,12 @@ def main():
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     summary = core.generate(
-        kptm_path, CONFIG_DIR, args.zeitraum, args.output,
+        kptm_path, CONFIG_DIR, args.output, zeitraum=args.zeitraum,
         bwa_path=args.bwa, bwa_sheet=args.bwa_sheet,
         pwbs_anfang=args.pwbs_anfang, pwbs_ende=args.pwbs_ende, pfak_pfade=args.pfak,
     )
 
-    print(f"{summary['zeilen']} Zeilen geladen.")
+    print(f"{summary['zeilen']} Zeilen geladen. Zeitraum: {summary['zeitraum']}")
     if summary["unbekannte_produktgruppen"]:
         print(f"WARNUNG: unbekannte Produktgruppen im Datensatz (nicht in config/produktgruppen.json): {summary['unbekannte_produktgruppen']}", file=sys.stderr)
     if summary["unbekannte_kostenarten"]:

@@ -277,9 +277,11 @@ form.addEventListener("submit", async (e) => {
   submitBtn.textContent = "Wird berechnet …";
 
   try {
-    const kptmExt = kptmFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
-    const kptmBytes = new Uint8Array(await kptmFile.arrayBuffer());
-    pyodide.FS.writeFile("/kptm" + kptmExt, kptmBytes);
+    // Unter dem Originalnamen ablegen: Fehlermeldungen nennen dann die Datei, die
+    // der Nutzer ausgewaehlt hat, und aus dem Namen laesst sich notfalls der
+    // Zeitraum lesen, falls dem Export die Periodenspalten fehlen.
+    const kptmPfad = "/" + kptmFile.name.replace(/[^\w.-]+/g, "_");
+    pyodide.FS.writeFile(kptmPfad, new Uint8Array(await kptmFile.arrayBuffer()));
 
     let bwaPathArg = "None";
     let bwaSheetArg = "None";
@@ -315,9 +317,7 @@ form.addEventListener("submit", async (e) => {
       }
     }
 
-    const zeitraum = document.getElementById("zeitraum").value || "unbekannter Zeitraum";
-
-    letzterLauf = { kptmExt, bwaPathArg, bwaSheetArg, pwbsAArg, pwbsEArg, pfakArg, zeitraum };
+    letzterLauf = { kptmPfad, bwaPathArg, bwaSheetArg, pwbsAArg, pwbsEArg, pfakArg };
     manuelleZuordnung = {};   // neuer Lauf mit neuen Dateien: alte Zuordnungen verwerfen
     await berechnen();
   } catch (err) {
@@ -343,7 +343,7 @@ async function berechnen() {
   const resultJson = await pyodide.runPythonAsync(`
 import json
 summary = spartenrechnung_core.generate(
-    "/kptm${L.kptmExt}", "/config", ${JSON.stringify(L.zeitraum)}, "/output.xlsx",
+    ${JSON.stringify(L.kptmPfad)}, "/config", "/output.xlsx",
     bwa_path=${L.bwaPathArg}, bwa_sheet=${L.bwaSheetArg},
     pwbs_anfang=${L.pwbsAArg}, pwbs_ende=${L.pwbsEArg}, pfak_pfade=${L.pfakArg},
     manuelle_zuordnung=${manuellArg},
@@ -354,8 +354,8 @@ json.dumps(summary)
   const outBytes = pyodide.FS.readFile("/output.xlsx");
   const blob = new Blob([outBytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
-  const filename = "Spartenrechnung_" + L.zeitraum.replace(/[^\w-]+/g, "_") + ".xlsx";
-  showResult(summary, url, filename);
+  // Der Dateiname kommt aus den Rohdaten (Jahr + Perioden), nicht aus einer Eingabe.
+  showResult(summary, url, summary.dateiname);
 }
 
 function showResult(summary, url, filename) {
@@ -530,9 +530,8 @@ function showResult(summary, url, filename) {
   const sichernBtn = document.getElementById("param-sichern");
   if (sichernBtn) {
     sichernBtn.addEventListener("click", async () => {
-      // Jahr aus dem Zeitraum-Text; der Stichtag 01.01. gehoert zum Folgejahr.
-      const treffer = String(summary.zeitraum || "").match(/20\d{2}/g);
-      const jahr = treffer ? treffer[treffer.length - 1] : new Date().getFullYear();
+      // Geschaeftsjahr aus den Rohdaten (Spalte 'Geschaeftsjahr'), nicht aus Text geraten.
+      const jahr = summary.jahr || new Date().getFullYear();
       const werte = JSON.stringify({ [String(jahr)]: summary.ufe_statistik.bestand_stichtag });
       await pyodide.runPythonAsync(`
 import json

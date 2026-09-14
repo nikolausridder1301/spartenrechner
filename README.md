@@ -8,8 +8,8 @@ Datei `KPTM_Wertsummen_*.xls`).
 
 **[→ Spartenrechner öffnen](https://nikolausridder1301.github.io/spartenrechner/)**
 
-Dateien per Drag & Drop hochladen (KPTM-Rohdaten, optional BWA), Zeitraum
-eintragen, "Spartenrechnung erstellen" klicken – fertige Excel-Datei zum
+Dateien per Drag & Drop hochladen (KPTM-Rohdaten, optional BWA),
+"Spartenrechnung erstellen" klicken – fertige Excel-Datei zum
 Download. Genau wie ein klassischer Online-Dateikonverter, mit einem
 entscheidenden Unterschied: **es wird nichts hochgeladen.** Die komplette
 Verarbeitung läuft direkt im Browser (Python als WebAssembly via
@@ -26,13 +26,16 @@ speichert. Der Quellcode der Seite liegt unter `docs/`.
 2. Skript ausführen:
 
    ```bash
-   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --zeitraum "Jan-März 2026" --output output/2026-Q1-Spartenrechnung.xlsx
+   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --output output/2026-Q1-Spartenrechnung.xlsx
    ```
+
+   Der Zeitraum wird nicht angegeben, sondern aus den Spalten `Geschäftsjahr`
+   und `Periode` des Exports gelesen (`--zeitraum` überschreibt ihn nur).
 
    Optional mit automatischem GuV-Kontroll-Check gegen die BWA (siehe unten):
 
    ```bash
-   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --zeitraum "Jan-März 2026" --output output/2026-Q1-Spartenrechnung.xlsx --bwa "C:\Users\nikol\Downloads\BWA Perforator 7.2026.xlsx" --bwa-sheet "BWA 03.2026"
+   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --output output/2026-Q1-Spartenrechnung.xlsx --bwa "C:\Users\nikol\Downloads\BWA Perforator 7.2026.xlsx" --bwa-sheet "BWA 03.2026"
    ```
 
 3. Ergebnis liegt in `output/` – eine schlanke Excel-Datei mit der
