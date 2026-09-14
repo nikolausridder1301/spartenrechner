@@ -204,28 +204,11 @@ function parameterInDateisystem() {
   return true;
 }
 
+// Ob etwas hinterlegt ist, zeigt allein der "loeschen"-Button (erscheint nur dann) -
+// ein zusaetzliches Status-Badge war neben der gelb hervorgehobenen Box ein
+// Hervorhebung zu viel.
 function parameterStatusZeigen() {
-  const badge = document.getElementById("parameter-status");
-  const loeschen = document.getElementById("param-loeschen");
-  const txt = parameterLesen();
-  if (!txt) {
-    badge.textContent = "nicht hinterlegt";
-    badge.className = "param-badge";
-    loeschen.style.display = "none";
-    return;
-  }
-  let info = "hinterlegt";
-  try {
-    const p = JSON.parse(txt);
-    const jahre = Object.keys(p.anfangsbestand || {});
-    const teile = [];
-    if (p.standard_stundensatz) teile.push("Stundensatz");
-    if (jahre.length) teile.push("Anfangsbestand " + jahre.join(", "));
-    if (teile.length) info = "hinterlegt: " + teile.join(" · ");
-  } catch (e) { /* Anzeige ist nachrangig */ }
-  badge.textContent = info;
-  badge.className = "param-badge ok";
-  loeschen.style.display = "inline-block";
+  document.getElementById("param-loeschen").style.display = parameterLesen() ? "inline-block" : "none";
 }
 
 /* Nimmt Excel (bevorzugt, weil im Controlling gepflegt) ebenso wie die frueher
