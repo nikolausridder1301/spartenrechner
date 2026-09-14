@@ -103,6 +103,65 @@ const INFO_TEXTE = {
     Gesch&auml;ftsjahr.
     <strong>Warum</strong>Ohne diesen Startwert l&auml;sst sich die Ver&auml;nderung des Bestands im
     Jahresverlauf nicht berechnen &ndash; der Endwert allein reicht nicht.`,
+
+  // --- Zeilen im Ergebnisteil: was die Zahl ist und wie sie zustande kommt ---
+  "zeilen": `<strong>Was ist es</strong>Die Anzahl der Buchungszeilen, die aus dem
+    KPTM-Export eingelesen wurden &ndash; eine Zeile ist eine Buchung
+    (Kostenart &times; Kostenobjekt &times; Periode).
+    <strong>Berechnung</strong>Schlicht die Zeilenzahl der Datei. Sie dient als Kontrolle,
+    dass der richtige und vollst&auml;ndige Export geladen wurde.`,
+  "erloese": `<strong>Was ist es</strong>Die Umsatzerl&ouml;se des Zeitraums, aufsummiert
+    &uuml;ber alle Sparten.
+    <strong>Berechnung</strong>Buchungen auf den Erl&ouml;skonten (4440*, 4460*, 4470*) plus
+    Frachterl&ouml;se (4521*, 4531*, 4535*), je Produktgruppe summiert und im Vorzeichen
+    gedreht &ndash; im ERP stehen Erl&ouml;se als Haben-Buchung negativ. Buchungen ohne
+    Produktgruppe z&auml;hlen nicht mit.`,
+  "db3": `<strong>Was ist es</strong>Deckungsbeitrag III: was je Sparte nach allen
+    zugerechneten Kosten &uuml;brig bleibt.
+    <strong>Berechnung</strong>Betriebsleistung (Erl&ouml;se + Bestandsver&auml;nderungen +
+    aktivierte Eigenleistung) abz&uuml;glich Material, Fremdleistungen und sonstiger
+    Aufwendungen ergibt die Rohmarge I; davon FEK, MGK und VVGK jeweils nach
+    Deckungsdifferenz. &bdquo;bottom-up&ldquo; hei&szlig;t: je Sparte gerechnet, dann summiert &ndash;
+    das ist <em>nicht</em> das Unternehmensergebnis, weil Buchungen ohne Sparte fehlen.`,
+  "mgk_satz": `<strong>Was ist es</strong>Der Materialgemeinkosten-Satz, mit dem Ihre
+    Kalkulation arbeitet &ndash; aus den Daten zur&uuml;ckgerechnet, nicht hinterlegt.
+    <strong>Berechnung</strong>MGK geteilt durch (Material + Fremdleistungen). Nur eine
+    Probe: Alle Werte kommen aus dem ERP, der Satz wird nie zum Rechnen benutzt. Streut
+    er zwischen den Sparten, wurde er unterj&auml;hrig ge&auml;ndert oder die Kontenzuordnung
+    stimmt nicht mehr.`,
+  "vvgk_satz": `<strong>Was ist es</strong>Der Satz f&uuml;r Verwaltungs- und
+    Vertriebsgemeinkosten, ebenfalls zur&uuml;ckgerechnet.
+    <strong>Berechnung</strong>VVGK geteilt durch die Herstellkosten, also durch
+    (Material + Fremdleistungen + MGK + FEK). Wie beim MGK-Satz nur eine Probe.`,
+  "unproduktiv": `<strong>Was ist es</strong>Fertigungsstunden, die geleistet, aber auf
+    keinen Fertigungsauftrag gebucht wurden. Sie liegen auf den Sammelauftr&auml;gen der
+    Kostenstellen &ndash; je Kostenstelle einer. Wirtschaftlich ist das die FEK-Unterdeckung.
+    <strong>Berechnung</strong>Alle ISWF-Buchungen auf Fertigungskostenstellen (K2*) mit
+    Auftragsart &bdquo;5&ldquo;; die Stunden sind der Betrag geteilt durch den Stundensatz. Der
+    Betrag wird bewusst auf keine Sparte verteilt &ndash; welcher Schl&uuml;ssel richtig w&auml;re,
+    sagt erst der BAB.`,
+  "wb_zugeordnet": `<strong>Was ist es</strong>Der Teil des Werkstattbestands, f&uuml;r den
+    die Sparte feststeht. Nur diese Auftr&auml;ge gehen in die Bestandsver&auml;nderung UFE ein.
+    <strong>Berechnung</strong>Je offenem Auftrag wird die Sparte gesucht: zuerst eine
+    Zuordnung von Hand, dann &uuml;ber die Auftragsnummer (aus KPTM/PFAK), zuletzt &uuml;ber die
+    Artikelnummer. Summiert wird die Spalte &bdquo;Offener Wert&ldquo;.`,
+  "wb_service": `<strong>Was ist es</strong>Serviceauftr&auml;ge &ndash; Monteureinsatz,
+    Inbetriebnahme, Schulung. Dabei wird nichts gefertigt, also geh&ouml;ren sie nicht in den
+    Werkstattbestand.
+    <strong>Berechnung</strong>Erkannt daran, dass der Auftrag keine Artikelnummer tr&auml;gt.
+    Sie werden auch dann nicht zugeordnet, wenn eine Quelle eine Sparte dafuer kennt &ndash;
+    sonst verf&auml;lschen einzelne Eins&auml;tze eine ganze Sparte.`,
+  "wb_offen": `<strong>Was ist es</strong>Auftr&auml;ge mit Artikelnummer, f&uuml;r die sich
+    keine Sparte finden lie&szlig; &ndash; die echte L&uuml;cke.
+    <strong>Berechnung</strong>Weder Auftrags- noch Artikelnummer f&uuml;hrten zu einer Sparte.
+    Liegt der Anteil &uuml;ber 1 % des Gesamtbestands, wird die Zeile
+    &bdquo;Bestandsver&auml;nderung UFE&ldquo; gar nicht erst gerechnet. Diese Auftr&auml;ge lassen sich
+    unten von Hand zuordnen.`,
+  "wb_gesamt": `<strong>Was ist es</strong>Der gesamte offene Werkstattbestand zum
+    Stichtag, also alle noch nicht fertiggemeldeten Fertigungsauftr&auml;ge.
+    <strong>Berechnung</strong>Summe der Spalte &bdquo;Offener Wert&ldquo; des PWBS-Exports
+    (Istwert abz&uuml;glich bereits abgeliefertem Wert) &uuml;ber alle Zeilen. Entspricht
+    zugeordnet + Serviceauftr&auml;ge + nicht zuordenbar.`,
 };
 
 (() => {
@@ -152,31 +211,33 @@ const INFO_TEXTE = {
     aktivesIcon = null;
   }
 
-  document.querySelectorAll(".info-icon").forEach((icon) => {
-    icon.addEventListener("mouseenter", () => zeigen(icon));
-    icon.addEventListener("mouseleave", () => verstecken(icon));
-    icon.addEventListener("focus", () => zeigen(icon));
-    icon.addEventListener("blur", () => verstecken(icon));
-    icon.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const warOffen = icon.classList.contains("open");
-      document.querySelectorAll(".info-icon.open").forEach((o) => o.classList.remove("open"));
-      if (warOffen) {
-        icon.classList.remove("open");
-        verstecken(null);
-      } else {
-        icon.classList.add("open");
-        zeigen(icon);
-      }
+  /* Ueber das Dokument verteilt statt je Icon: die Icons im Ergebnisteil entstehen
+     erst nach dem Rechnen (innerHTML) und bei jeder Neuberechnung erneut. Mit
+     Listenern am einzelnen Icon haetten genau die keine Erklaerung. mouseover/
+     focusin werden benutzt, weil mouseenter/focus nicht aufsteigen. */
+  const zuIcon = (e) => (e.target && e.target.closest ? e.target.closest(".info-icon") : null);
+
+  document.addEventListener("mouseover", (e) => { const i = zuIcon(e); if (i) zeigen(i); });
+  document.addEventListener("mouseout", (e) => { const i = zuIcon(e); if (i) verstecken(i); });
+  document.addEventListener("focusin", (e) => { const i = zuIcon(e); if (i) zeigen(i); });
+  document.addEventListener("focusout", (e) => { const i = zuIcon(e); if (i) verstecken(i); });
+
+  document.addEventListener("click", (e) => {
+    const icon = zuIcon(e);
+    document.querySelectorAll(".info-icon.open").forEach((o) => {
+      if (o !== icon) o.classList.remove("open");
     });
-    icon.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); icon.click(); }
-      if (e.key === "Escape") { icon.classList.remove("open"); verstecken(null); icon.blur(); }
-    });
+    if (!icon) { verstecken(null); return; }
+    const warOffen = icon.classList.contains("open");
+    icon.classList.toggle("open", !warOffen);
+    if (warOffen) verstecken(null); else zeigen(icon);
   });
-  document.addEventListener("click", () => {
-    document.querySelectorAll(".info-icon.open").forEach((o) => o.classList.remove("open"));
-    verstecken(null);
+
+  document.addEventListener("keydown", (e) => {
+    const icon = zuIcon(e);
+    if (!icon) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); icon.click(); }
+    if (e.key === "Escape") { icon.classList.remove("open"); verstecken(null); icon.blur(); }
   });
   window.addEventListener("scroll", () => { if (aktivesIcon) positionieren(aktivesIcon); }, true);
   window.addEventListener("resize", () => { if (aktivesIcon) positionieren(aktivesIcon); });
@@ -426,11 +487,27 @@ json.dumps(summary)
   showResult(summary, url, summary.dateiname);
 }
 
+/* Eine Zeile der Ergebnisuebersicht. 'info' ist der Schluessel in INFO_TEXTE und
+   haengt das "?" mit der Erklaerung an - dieselbe Mechanik wie im Formular. */
+function summaryZeile(label, wert, info, fett) {
+  const l = fett ? `<strong>${label}</strong>` : label;
+  const w = fett ? `<strong>${wert}</strong>` : wert;
+  const fragezeichen = info
+    ? ` <span class="info-icon" tabindex="0" role="button" data-info="${info}"
+         aria-label="Erklärung: ${label}">?</span>`
+    : "";
+  return `<div class="summary-line"><span>${l}${fragezeichen}</span><span>${w}</span></div>`;
+}
+
 function showResult(summary, url, filename) {
+  const eurF = (v) => v.toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
   let html = "<h2>✅ Spartenrechnung erstellt</h2>";
-  html += `<div class="summary-line"><span>Rohdaten-Zeilen verarbeitet</span><span>${summary.zeilen.toLocaleString("de-DE")}</span></div>`;
-  html += `<div class="summary-line"><span>Erlöse (Summe der Sparten)</span><span>${summary.erloese_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
-  html += `<div class="summary-line"><span>DB III bottom-up (Summe der Sparten)</span><span>${summary.db3_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
+  html += summaryZeile("Rohdaten-Zeilen verarbeitet",
+    summary.zeilen.toLocaleString("de-DE"), "zeilen");
+  html += summaryZeile("Erlöse (Summe der Sparten)",
+    eurF(summary.erloese_summe) + " €", "erloese");
+  html += summaryZeile("DB III bottom-up (Summe der Sparten)",
+    eurF(summary.db3_summe) + " €", "db3");
 
   // Die aus den Rohdaten zurueckgerechneten Zuschlagssaetze. Frueher stand hier der
   // erwartete Satz als Vergleichswert - der gehoert nicht in oeffentlichen Quellcode.
@@ -438,13 +515,14 @@ function showResult(summary, url, filename) {
   for (const [key, label] of [["mgk", "MGK"], ["vvgk", "VVGK"]]) {
     if (saetze[key] === undefined || saetze[key] === null) continue;
     const satz = (saetze[key] * 100).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    html += `<div class="summary-line"><span>${label}-Zuschlagssatz (Probe – gegen die eigene Kalkulation prüfen)</span><span>${satz} %</span></div>`;
+    html += summaryZeile(`${label}-Zuschlagssatz (Probe – gegen die eigene Kalkulation prüfen)`,
+      satz + " %", key + "_satz");
   }
 
   if (summary.unproduktive_gemeinkosten) {
-    const betrag = summary.unproduktive_gemeinkosten.toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const std = summary.unproduktive_stunden.toLocaleString("de-DE", {maximumFractionDigits: 0});
-    html += `<div class="summary-line"><span>Nicht auf Kostenträger gebuchte Stunden (${std} h)</span><span>${betrag} €</span></div>`;
+    html += summaryZeile(`Nicht auf Kostenträger gebuchte Stunden (${std} h)`,
+      eurF(summary.unproduktive_gemeinkosten) + " €", "unproduktiv");
   }
 
   if (summary.mgk_hinweise && summary.mgk_hinweise.length) {
@@ -463,10 +541,13 @@ function showResult(summary, url, filename) {
     const pct = (v) => (v * 100).toLocaleString("de-DE", {minimumFractionDigits: 1, maximumFractionDigits: 1}) + " %";
     const zugeordnetQuote = stat.gesamt ? stat.zugeordnet / stat.gesamt : 0;
     html += `<h2 style="margin-top:1.5rem">Werkstattbestand – Zuordnung</h2>`;
-    html += `<div class="summary-line"><span>einer Sparte zugeordnet</span><span>${eur(stat.zugeordnet)} · ${pct(zugeordnetQuote)}</span></div>`;
-    html += `<div class="summary-line"><span>Serviceaufträge (bewusst ausgeschlossen)</span><span>${eur(stat.service)} · ${pct(stat.service_quote)}</span></div>`;
-    html += `<div class="summary-line"><span>nicht zuordenbar</span><span>${eur(stat.offen)} · ${pct(stat.luecke_quote)}</span></div>`;
-    html += `<div class="summary-line"><span><strong>Werkstattbestand gesamt</strong></span><span><strong>${eur(stat.gesamt)}</strong></span></div>`;
+    html += summaryZeile("einer Sparte zugeordnet",
+      `${eur(stat.zugeordnet)} · ${pct(zugeordnetQuote)}`, "wb_zugeordnet");
+    html += summaryZeile("Serviceaufträge (bewusst ausgeschlossen)",
+      `${eur(stat.service)} · ${pct(stat.service_quote)}`, "wb_service");
+    html += summaryZeile("nicht zuordenbar",
+      `${eur(stat.offen)} · ${pct(stat.luecke_quote)}`, "wb_offen");
+    html += summaryZeile("Werkstattbestand gesamt", eur(stat.gesamt), "wb_gesamt", true);
 
     // Warnungen, die die Zeile NICHT blockieren, aber die Belastbarkeit einzelner
     // Sparten betreffen. Die Prozentschwelle misst am Gesamtbestand und sagt darum
