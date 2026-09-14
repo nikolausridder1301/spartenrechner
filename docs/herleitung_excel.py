@@ -370,17 +370,43 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "Werkstattbestand zum Periodenbeginn (01.01.), gleiche Systematik wie das "
             "Blatt 'Daten_PWBS_Ende'.")
 
-    if anfangsbestand:
+    # Die hinterlegten Zuschlagssaetze gehoeren mit ins Blatt: sie stehen in derselben
+    # Parameterdatei wie die Anfangsbestaende und sind der Massstab, gegen den die aus
+    # den Daten zurueckgerechneten Saetze geprueft werden. Ohne sie zeigt die Mappe
+    # nur die eine Haelfte der hinterlegten Parameter.
+    saetze = [(bez, mapping.get(f"{k}_zuschlagssatz_erwartet"))
+              for k, bez in (("mgk", "MGK-Zuschlagssatz"),
+                             ("vvgk", "VVGK-Zuschlagssatz"))]
+    saetze = [(bez, wert) for bez, wert in saetze if wert is not None]
+
+    if anfangsbestand or saetze:
+        # columns= mitgeben, damit auch ohne Anfangsbestaende die Kopfzeile entsteht.
         df_b = pd.DataFrame([{"Sparte": p, "Anfangsbestand": v}
-                             for p, v in sorted(anfangsbestand.items())])
+                             for p, v in sorted((anfangsbestand or {}).items())],
+                            columns=["Sparte", "Anfangsbestand"])
         ws, erste = _blatt_mit_daten(
             wb, "Betriebsparameter", df_b,
-            "Werkstattbestand je Sparte zum 01.01. Grundlage der Zeile "
-            "'Bestandsveraenderung UFE': UFE = Bestand(Stichtag) - Anfangsbestand.")
+            "Hinterlegte Betriebsparameter. Links der Werkstattbestand je Sparte zum "
+            "01.01. - Grundlage der Zeile 'Bestandsveraenderung UFE': "
+            "UFE = Bestand(Stichtag) - Anfangsbestand. Rechts die Zuschlagssaetze der "
+            "Kalkulation; sie werden nicht zum Rechnen benutzt, sondern sind der "
+            "Sollwert, gegen den die aus den Daten zurueckgerechneten Saetze pruefen.")
         ws.column_dimensions["A"].width = 12
         ws.column_dimensions["B"].width = 18
         for r in range(erste, erste + len(df_b)):
             ws.cell(row=r, column=2).number_format = "#,##0.00"
+
+        if saetze:
+            kopf = erste - 1
+            for spalte, text in ((4, "Kennzahl"), (5, "Hinterlegter Wert")):
+                z = ws.cell(row=kopf, column=spalte, value=text)
+                z.font, z.fill = FONT_WEISS, FILL_DATEN
+            for i, (bez, wert) in enumerate(saetze, start=erste):
+                ws.cell(row=i, column=4, value=bez)
+                z = ws.cell(row=i, column=5, value=float(wert))
+                z.number_format = "0.00%"
+            ws.column_dimensions["D"].width = 22
+            ws.column_dimensions["E"].width = 18
 
     # Das Stundenblatt rechnet aus denselben Rohdaten - also gehoert es genauso
     # verformelt, sonst steht neben einer nachvollziehbaren Tabelle eine, die man
