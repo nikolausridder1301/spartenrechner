@@ -10,7 +10,6 @@ const errorBox = document.getElementById("error");
 
 let pyodide = null;
 let kptmFile = null;
-let bwaFile = null;
 let pwbsAnfangFile = null;
 let pwbsEndeFile = null;
 let pfakFiles = [];
@@ -37,13 +36,6 @@ setupDropzone("dropzone-kptm", "dropzone-kptm-text", "file-kptm", (file, zone, t
   kptmFile = file;
   zone.classList.add("has-file");
   text.textContent = "✓ " + file.name;
-});
-
-setupDropzone("dropzone-bwa", "dropzone-bwa-text", "file-bwa", async (file, zone, text) => {
-  bwaFile = file;
-  zone.classList.add("has-file");
-  text.textContent = "✓ " + file.name;
-  await populateBwaSheets(file);
 });
 
 setupDropzone("dropzone-pwbs-a", "dropzone-pwbs-a-text", "file-pwbs-a", (file, zone, text) => {
@@ -197,32 +189,6 @@ document.getElementById("param-loeschen").addEventListener("click", () => {
   parameterStatusZeigen();
 });
 
-async function populateBwaSheets(file) {
-  const field = document.getElementById("bwa-sheet-field");
-  const select = document.getElementById("bwa-sheet");
-  select.innerHTML = "";
-  field.style.display = "none";
-  if (!pyodide) return;
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  pyodide.FS.writeFile("/bwa_scan.xlsx", bytes);
-  const sheetsJson = await pyodide.runPythonAsync(`
-import openpyxl, json, warnings
-warnings.filterwarnings("ignore")
-wb = openpyxl.load_workbook("/bwa_scan.xlsx", read_only=True)
-sheets = [s for s in wb.sheetnames if s.strip().upper().startswith("BWA")]
-json.dumps(sheets)
-  `);
-  const sheets = JSON.parse(sheetsJson);
-  if (sheets.length === 0) return;
-  for (const s of sheets) {
-    const opt = document.createElement("option");
-    opt.value = s; opt.textContent = s;
-    select.appendChild(opt);
-  }
-  field.style.display = "block";
-}
-
 async function init() {
   try {
     pyodide = await loadPyodide();
@@ -272,6 +238,10 @@ form.addEventListener("submit", async (e) => {
     showError("Bitte zuerst die KPTM_Wertsummen-Datei auswählen.");
     return;
   }
+  if (!pwbsEndeFile) {
+    showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
+    return;
+  }
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Wird berechnet …";
@@ -283,41 +253,27 @@ form.addEventListener("submit", async (e) => {
     const kptmPfad = "/" + kptmFile.name.replace(/[^\w.-]+/g, "_");
     pyodide.FS.writeFile(kptmPfad, new Uint8Array(await kptmFile.arrayBuffer()));
 
-    let bwaPathArg = "None";
-    let bwaSheetArg = "None";
-    const bwaSheetSelect = document.getElementById("bwa-sheet");
-    if (bwaFile && bwaSheetSelect.value) {
-      const bwaBytes = new Uint8Array(await bwaFile.arrayBuffer());
-      pyodide.FS.writeFile("/bwa.xlsx", bwaBytes);
-      bwaPathArg = `"/bwa.xlsx"`;
-      bwaSheetArg = JSON.stringify(bwaSheetSelect.value);
-    }
-
-    // Optional: Werkstattbestand fuer die Bestandsveraenderung UFE.
+    // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
     // Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante, eine PWBS-Datei
     // zum Periodenbeginn ist daher nur ein Zusatz.
     let pwbsAArg = "None";
-    let pwbsEArg = "None";
-    let pfakArg = "None";
-    if (pwbsEndeFile) {
-      const extE = pwbsEndeFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
-      pyodide.FS.writeFile("/pwbs_ende" + extE, new Uint8Array(await pwbsEndeFile.arrayBuffer()));
-      pwbsEArg = JSON.stringify("/pwbs_ende" + extE);
-      const pfakPfade = [];
-      for (let i = 0; i < pfakFiles.length; i++) {
-        const p = `/pfak_${i}.xlsx`;
-        pyodide.FS.writeFile(p, new Uint8Array(await pfakFiles[i].arrayBuffer()));
-        pfakPfade.push(p);
-      }
-      pfakArg = pfakPfade.length ? JSON.stringify(pfakPfade) : "None";
-      if (pwbsAnfangFile) {
-        const extA = pwbsAnfangFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
-        pyodide.FS.writeFile("/pwbs_anfang" + extA, new Uint8Array(await pwbsAnfangFile.arrayBuffer()));
-        pwbsAArg = JSON.stringify("/pwbs_anfang" + extA);
-      }
+    const extE = pwbsEndeFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
+    pyodide.FS.writeFile("/pwbs_ende" + extE, new Uint8Array(await pwbsEndeFile.arrayBuffer()));
+    const pwbsEArg = JSON.stringify("/pwbs_ende" + extE);
+    const pfakPfade = [];
+    for (let i = 0; i < pfakFiles.length; i++) {
+      const p = `/pfak_${i}.xlsx`;
+      pyodide.FS.writeFile(p, new Uint8Array(await pfakFiles[i].arrayBuffer()));
+      pfakPfade.push(p);
+    }
+    const pfakArg = pfakPfade.length ? JSON.stringify(pfakPfade) : "None";
+    if (pwbsAnfangFile) {
+      const extA = pwbsAnfangFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
+      pyodide.FS.writeFile("/pwbs_anfang" + extA, new Uint8Array(await pwbsAnfangFile.arrayBuffer()));
+      pwbsAArg = JSON.stringify("/pwbs_anfang" + extA);
     }
 
-    letzterLauf = { kptmPfad, bwaPathArg, bwaSheetArg, pwbsAArg, pwbsEArg, pfakArg };
+    letzterLauf = { kptmPfad, pwbsAArg, pwbsEArg, pfakArg };
     manuelleZuordnung = {};   // neuer Lauf mit neuen Dateien: alte Zuordnungen verwerfen
     await berechnen();
   } catch (err) {
@@ -344,7 +300,6 @@ async function berechnen() {
 import json
 summary = spartenrechnung_core.generate(
     ${JSON.stringify(L.kptmPfad)}, "/config", "/output.xlsx",
-    bwa_path=${L.bwaPathArg}, bwa_sheet=${L.bwaSheetArg},
     pwbs_anfang=${L.pwbsAArg}, pwbs_ende=${L.pwbsEArg}, pfak_pfade=${L.pfakArg},
     manuelle_zuordnung=${manuellArg},
 )
@@ -363,16 +318,6 @@ function showResult(summary, url, filename) {
   html += `<div class="summary-line"><span>Rohdaten-Zeilen verarbeitet</span><span>${summary.zeilen.toLocaleString("de-DE")}</span></div>`;
   html += `<div class="summary-line"><span>Erlöse (Summe der Sparten)</span><span>${summary.erloese_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
   html += `<div class="summary-line"><span>DB III bottom-up (Summe der Sparten)</span><span>${summary.db3_summe.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
-  if (summary.bwa_ergebnis !== null && summary.bwa_ergebnis !== undefined) {
-    const delta = summary.db3_summe - summary.bwa_ergebnis;
-    html += `<div class="summary-line"><span>Ergebnis lt. GuV (BWA, kumuliert)</span><span>${summary.bwa_ergebnis.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
-    html += `<div class="summary-line"><span>Δ zu erklären</span><span>${delta.toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2})} €</span></div>`;
-    html += `<p class="hinweis" style="margin-top:0.4rem">„Summe der Sparten" ist nicht das
-      Gesamtunternehmensergebnis: Sachkonto-Buchungen ohne Produktgruppe (z.&nbsp;B.
-      Grundstücksverkäufe, Abgrenzungen, periodenfremde Erträge) tragen keine Sparte und
-      erscheinen in keinem KPTM-Export – die Δ-Zeile enthält deshalb auch diese Posten,
-      nicht nur die Deckungsdifferenzen. Details im Hinweise-Blatt der Ausgabedatei.</p>`;
-  }
 
   // Die aus den Rohdaten zurueckgerechneten Zuschlagssaetze. Frueher stand hier der
   // erwartete Satz als Vergleichswert - der gehoert nicht in oeffentlichen Quellcode.

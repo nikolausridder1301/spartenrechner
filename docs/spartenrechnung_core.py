@@ -673,8 +673,8 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     else:
         warnungen.append(
             f"Kein Anfangsbestand fuer das Geschaeftsjahr {jahr or '(unbekannt)'}. Abhilfe: den "
-            f"PWBS-Export mit Stichtag 01.01.{jahr or 'JJJJ'} im Feld 'Werkstattbestand - "
-            f"Periodenbeginn' zusaetzlich hochladen. Das ist derselbe Report wie der monatliche, "
+            f"PWBS-Export mit Stichtag 01.01.{jahr or 'JJJJ'} im Feld 'Anfangsbestand' "
+            f"zusaetzlich hochladen. Das ist derselbe Report wie der monatliche, "
             f"nur mit anderem Stichtag; beim Abschluss des Januars brauchen Sie ihn ohnehin. "
             f"Danach zeigt das Tool die errechneten Werte an, damit sie fuer die restlichen "
             f"Monate des Jahres hinterlegt werden koennen."

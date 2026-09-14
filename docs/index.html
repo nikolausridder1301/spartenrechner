@@ -31,7 +31,8 @@
 
     <form id="form" class="panel" style="display:none;">
       <div class="field">
-        <label>ERP-Rohdaten &ndash; KPTM_Wertsummen (*.xls / *.xlsx) <span class="required">Pflicht</span></label>
+        <label>ERP Daten <span class="feld-hinweis">KPTM_Wertsummen, *.xls / *.xlsx</span>
+          <span class="required">Pflicht</span></label>
         <div class="dropzone" id="dropzone-kptm">
           <span id="dropzone-kptm-text">Datei hierher ziehen oder klicken zum Ausw&auml;hlen</span>
           <input type="file" id="file-kptm" accept=".xls,.xlsx" hidden>
@@ -39,7 +40,7 @@
       </div>
 
       <div class="field">
-        <label>PWBS Werkstattbestand &ndash; Periodenende</label>
+        <label>PWBS Werkstattbestand &ndash; Periodenende <span class="required">Pflicht</span></label>
         <div class="dropzone" id="dropzone-pwbs-e">
           <span id="dropzone-pwbs-e-text">Datei hierher ziehen oder klicken zum Ausw&auml;hlen</span>
           <input type="file" id="file-pwbs-e" accept=".xls,.xlsx" hidden>
@@ -47,7 +48,7 @@
       </div>
 
       <div class="field">
-        <label>PFAK Fertigungsauftr&auml;ge <span class="feld-hinweis">die neueste Datei, die vorliegt</span></label>
+        <label>PFAK Daten <span class="feld-hinweis">aktuellste Datei</span></label>
         <div class="dropzone" id="dropzone-pfak">
           <span id="dropzone-pfak-text">Datei hierher ziehen oder klicken zum Ausw&auml;hlen</span>
           <input type="file" id="file-pfak" accept=".xlsx" multiple hidden>
@@ -69,19 +70,6 @@
           <input type="file" id="file-param" accept=".xlsx,.xls,.json" hidden>
         </div>
         <button type="button" id="param-loeschen" style="display:none;">Hinterlegte Parameter l&ouml;schen</button>
-      </div>
-
-      <div class="field">
-        <label>BWA-Datei <span class="feld-hinweis">optional, f&uuml;r den GuV-Kontrollabgleich</span></label>
-        <div class="dropzone" id="dropzone-bwa">
-          <span id="dropzone-bwa-text">Datei hierher ziehen oder klicken zum Ausw&auml;hlen</span>
-          <input type="file" id="file-bwa" accept=".xlsx" hidden>
-        </div>
-      </div>
-
-      <div class="field" id="bwa-sheet-field" style="display:none;">
-        <label for="bwa-sheet">BWA-Sheet (Periode, kumuliert bis Periodenende)</label>
-        <select id="bwa-sheet"></select>
       </div>
 
       <button type="submit" id="submit-btn" disabled>Spartenrechnung erstellen</button>
