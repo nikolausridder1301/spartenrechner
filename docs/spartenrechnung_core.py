@@ -995,18 +995,19 @@ def neu_berechnen(result):
 
 
 
-# Farben des Diagramms. Kosten in gedeckten Blau-/Grautoenen, das Ergebnis als
-# einziger kraeftiger Akzent - so liest man die Balken von unten nach oben und
-# sieht zuletzt, was uebrig bleibt.
+# Farben des Diagramms: die Reihenfolge des klassischen Office-Themas, also genau
+# die Toene, die auch das Diagramm der Referenzmappe zeigt (accent1..accent6, dann
+# das aufgehellte Rot fuer VVGK), und Gold fuer den Deckungsbeitrag. So sieht das
+# erzeugte Diagramm aus wie die Auswertungen, die im Haus ohnehin herumliegen.
 DIAGRAMM_SERIEN = [
-    ("material", "Material", "3E5C8A"),
-    ("fremdleistungen", "Fremdleistungen", "5B7FB0"),
-    ("personalaufwand", "Personalaufwand", "8FA9C9"),
-    ("sba", "sonst. betriebl. Aufwand", "B6C6DC"),
-    ("fek_nach_dd", "Fertigungseinzelkosten", "6E7B8B"),
-    ("mgk_nach_dd", "Materialgemeinkosten", "9AA5B1"),
-    ("vvgk_nach_dd", "Verwaltung & Vertrieb", "C3CAD2"),
-    ("db3", "Deckungsbeitrag III", "1F9D6B"),
+    ("material", "Material", "4F81BD"),
+    ("fremdleistungen", "Fremdleistungen", "C0504D"),
+    ("personalaufwand", "Personalaufwand", "9BBB59"),
+    ("sba", "sonst. betriebl. Aufwand", "8064A2"),
+    ("fek_nach_dd", "Fertigungseinzelkosten", "4BACC6"),
+    ("mgk_nach_dd", "Materialgemeinkosten", "F79646"),
+    ("vvgk_nach_dd", "Verwaltung & Vertrieb", "D99694"),
+    ("db3", "Deckungsbeitrag III", "FFC000"),
 ]
 
 
@@ -1061,15 +1062,19 @@ def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
     ch.grouping = "stacked"
     ch.overlap = 100
     ch.title = f"Spartenrechnung {zeitraum} – Kostenstruktur und Ergebnis je Sparte"
-    ch.y_axis.title = "EUR"
+    # Kein Achsentitel: openpyxl setzt ihn waagerecht, dadurch lag das "EUR" quer
+    # ueber den Zahlen der Achse. Die Einheit steht ohnehin in der Kopfzeile des
+    # Blattes ("abs. Zahlen in EUR").
     ch.y_axis.numFmt = "#,##0"
     ch.y_axis.majorGridlines.spPr = GraphicalProperties(ln=LineProperties(solidFill="E8EAED"))
     ch.x_axis.delete = False
     ch.y_axis.delete = False
-    ch.gapWidth = 40
+    # gapWidth ist der Abstand ZWISCHEN den Balken in Prozent der Balkenbreite:
+    # je groesser, desto schmaler der Balken. 150 wie in der Referenzmappe.
+    ch.gapWidth = 150
     ch.height = 11
     ch.width = max(20, 2.0 * len(sparten))
-    ch.legend.position = "b"
+    ch.legend.position = "r"
     ch.legend.overlay = False
 
     kategorien = Reference(ws, min_col=2, max_col=len(sparten) + 1, min_row=kopf)

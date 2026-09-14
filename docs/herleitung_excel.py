@@ -103,11 +103,20 @@ def _mapping_blatt(wb, mapping, produktgruppen):
     for sp, breite in (("A", 12), ("B", 22), ("C", 34), ("D", 11), ("E", 12)):
         ws.column_dimensions[sp].width = breite
 
+    # Die Nebentabellen beginnen in derselben Zeile wie die Haupttabelle (Kopf in 3,
+    # Daten ab 4) und tragen dieselbe Kopfformatierung - sonst steht rechts daneben
+    # eine zweite Tabelle, die um zwei Zeilen versetzt und anders formatiert ist.
+    KOPF = 3
+    def kopfzelle(spalte, text):
+        z = ws.cell(row=KOPF, column=spalte, value=text)
+        z.font, z.fill = FONT_WEISS, FILL_DATEN
+        return z
+
     # Die gueltigen Sparten als sichtbarer Bereich. Die Fracht-Umbuchung in
     # 'Daten_KPTM' schlaegt hier nach, ob es das Frachtkostenobjekt ueberhaupt gibt.
     # (Als Array-Konstante in der Formel verweigert Excel die Datei.)
-    ws.cell(row=1, column=7, value="Gültige Sparten").font = Font(bold=True)
-    for i, pg in enumerate(produktgruppen, start=2):
+    kopfzelle(7, "Gültige Sparten")
+    for i, pg in enumerate(produktgruppen, start=KOPF + 1):
         ws.cell(row=i, column=7, value=pg)
     ws.column_dimensions["G"].width = 16
 
@@ -115,14 +124,14 @@ def _mapping_blatt(wb, mapping, produktgruppen):
     # in 'Daten_KPTM' dasselbe rechnen wie das Programm - sonst zeigt die Mappe
     # andere Zahlen als das Tool, und zwar unbemerkt.
     regel = mapping.get("kostenart_praefix_regel", {})
-    ws.cell(row=1, column=9, value="Auffangregel: Konto beginnt mit").font = Font(bold=True)
-    ws.cell(row=1, column=10, value="Zeile").font = Font(bold=True)
-    ws.cell(row=1, column=11, value="Vorzeichen").font = Font(bold=True)
-    for i, (praefix, r) in enumerate(sorted(regel.items()), start=2):
+    kopfzelle(9, "Auffangregel: Konto beginnt mit")
+    kopfzelle(10, "Zeile")
+    kopfzelle(11, "Vorzeichen")
+    for i, (praefix, r) in enumerate(sorted(regel.items()), start=KOPF + 1):
         ws.cell(row=i, column=9, value=praefix)
         ws.cell(row=i, column=10, value=r["zeile"])
         ws.cell(row=i, column=11, value=r["sign"])
-    ws.cell(row=len(regel) + 3, column=9, value=(
+    ws.cell(row=KOPF + len(regel) + 2, column=9, value=(
         "Greift nur, wenn links kein Einzeleintrag passt. Gilt fuer Konten, die in der "
         "Einzelliste fehlen, weil sie im Kalibrierungszeitraum nicht vorkamen."
     )).font = Font(italic=True, size=9)
@@ -132,8 +141,8 @@ def _mapping_blatt(wb, mapping, produktgruppen):
     # Begrenzte Bereiche statt ganzer Spalten: bei 60.000 Formeln, die hier
     # nachschlagen, ist der Unterschied beim Neuberechnen deutlich spuerbar.
     letzte_mapping = 3 + len(zeilen)
-    return ws, (f"Mapping!$G$2:$G${len(produktgruppen) + 1}",
-                f"Mapping!$I$2:$K${n + 1}",
+    return ws, (f"Mapping!$G${KOPF + 1}:$G${KOPF + len(produktgruppen)}",
+                f"Mapping!$I${KOPF + 1}:$K${KOPF + n}",
                 f"Mapping!$A$4:$E${letzte_mapping}")
 
 
