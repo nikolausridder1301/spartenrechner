@@ -42,7 +42,12 @@ ZEILEN_KLASSE = {
     "fek": "auto", "fek_deckungsdifferenz": "manual", "fek_nach_dd": "formula", "db1": "formula",
     "mgk": "auto", "mgk_deckungsdifferenz": "manual", "mgk_nach_dd": "formula", "db2": "formula",
     "vvgk": "auto", "vvgk_deckungsdifferenz": "manual", "vvgk_nach_dd": "formula",
-    "db3_vor_sonderposten": "formula", "sonderposten": "manual", "db3": "formula",
+    # 'sonderposten' ist NICHT manuell zu ergaenzen: in der Referenzrechnung traegt
+    # diese Zeile in jeder echten Sparte 0,00. Die Betraege (Photovoltaik, Grundstueck
+    # Valluhn) stehen ausschliesslich auf Kostenobjekten, die keine Sparte sind - sie
+    # koennen in einer Kostentraegerrechnung gar nicht je Sparte auftauchen. Rosa war
+    # hier also eine Aufforderung, etwas nachzutragen, das es nicht gibt.
+    "db3_vor_sonderposten": "formula", "sonderposten": "strukturell_null", "db3": "formula",
 }
 
 FILL_NULL = PatternFill("solid", fgColor="EFEFEF")       # grau: strukturell null
@@ -1318,7 +1323,12 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         "  manuelle Referenzrechnung als 'FEK nach Deckungsdifferenz (IST)' ausweist - auf 0,25 % genau.",
         "  Die Hoehe steht deshalb oben im Blatt. Offen ist nur, nach welchem Schluessel der Betrag auf",
         "  die einzelnen Sparten verteilt wird; das beste ueberpruefbare Modell verfehlt um 21.396 EUR.",
-        "- Sonderposten/Einmaleffekte: bewusste manuelle Korrekturen, jede Periode neu zu beurteilen.",
+        "",
+        "STRUKTURELL NULL (grau) - die Zeile gehoert dazu, hat je Sparte aber keinen Inhalt:",
+        "- Sonderposten/Einmaleffekte: In der Referenzrechnung traegt diese Zeile in JEDER echten Sparte",
+        "  0,00. Die Betraege (Q1 2026: Photovoltaik -12.440,72, Grundstueck Valluhn -46.486,53) stehen",
+        "  ausschliesslich auf Kostenobjekten, die keine Sparte sind. Eine Kostentraegerrechnung kann sie",
+        "  je Sparte gar nicht ausweisen - hier fehlt also nichts, es ist nichts zu ergaenzen.",
         "",
         "HINWEIS ZUM ERP-EXPORT: Die Datei KPTM_Wertsummen ist auf 'Datenbestand = Istdaten' gefiltert",
         "(alle 15.045 Zeilen tragen diesen Wert) und enthaelt nur die Wertarten ISWV/ISWF/ISMF. Falls die",
