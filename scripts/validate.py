@@ -24,7 +24,7 @@ CONFIG_DIR = os.path.join(REPO_ROOT, "config")
 sys.path.insert(0, os.path.join(REPO_ROOT, "docs"))
 
 import spartenrechnung_core as core  # noqa: E402
-from spartenrechnung import find_kptm_file  # noqa: E402
+from spartenrechnung import find_kptm_file, find_kostentraeger_file  # noqa: E402
 
 # Zuordnung: interner Zeilenschluessel -> Zeilennummer in der Referenz-Arbeitsmappe
 REFERENZ_ZEILEN = {
@@ -86,6 +86,8 @@ def main():
     ap.add_argument("--zeitraum", help="Fuer den Jahresbezug des Werkstattbestands, z.B. 'Jan-Maerz 2026'")
     ap.add_argument("--pwbs-ende", help="Optional: Werkstattbestand zum Periodenende (fuer die UFE-Zeile)")
     ap.add_argument("--pfak", nargs="*", help="Optional: PFAK-Dateien zur Sparten-Zuordnung")
+    ap.add_argument("--kostentraeger", help="Optional: Kostentraeger-Auswertung (Deckungsdifferenzen). "
+                    "Ohne Angabe wird im Rohdaten-Ordner gesucht.")
     args = ap.parse_args()
 
     mapping, pg_config = core.load_config(CONFIG_DIR)
@@ -94,6 +96,12 @@ def main():
     if satz:
         mapping["standard_stundensatz"] = satz
     result, produktgruppen, _, _, _ = core.build_spartenrechnung(df, mapping, pg_config)
+
+    kt_pfad = args.kostentraeger or find_kostentraeger_file(args.rohdaten)
+    if kt_pfad:
+        result, dd = core.deckungsdifferenzen_einsetzen(result, kt_pfad, mapping, df)
+        for h in dd.get("hinweise", []):
+            print(f"HINWEIS: {h}", file=sys.stderr)
 
     if args.pwbs_ende:
         jahr = core.geschaeftsjahr(df, args.zeitraum or args.referenz_sheet)

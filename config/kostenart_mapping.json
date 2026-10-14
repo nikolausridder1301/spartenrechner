@@ -253,5 +253,36 @@
       "sign": 1
     }
   },
-  "kostenart_praefix_regel_hinweis": "Auffangregel fuer Kostenarten, die nicht einzeln gemappt sind. Noetig, weil die Einzelliste nur die Konten kennt, die im Kalibrierungszeitraum Q1 2026 vorkamen - in Jan-Juli tauchten sieben weitere 6er-Konten auf (Kfz, Uebernachtung, Gewaehrleistung, Provisionen, Bankgebuehren, sonstige Kosten), zusammen 30.297 EUR, die sonst stillschweigend unter den Tisch gefallen waeren. Belegt: von allen 6xxxxx-Konten mit Produktgruppe geht jedes einzelne auf 'sba' (7 von 7 in der Einzelliste). Die Regel greift NUR, wenn kein Einzeleintrag passt, und bucht nicht um - eine Fracht-Umbuchung muss weiterhin einzeln hinterlegt werden. Per Regel zugeordnete Konten werden im Ergebnis ausgewiesen, damit sie nicht unbemerkt bleiben."
+  "kostenart_praefix_regel_hinweis": "Auffangregel fuer Kostenarten, die nicht einzeln gemappt sind. Noetig, weil die Einzelliste nur die Konten kennt, die im Kalibrierungszeitraum Q1 2026 vorkamen - in Jan-Juli tauchten sieben weitere 6er-Konten auf (Kfz, Uebernachtung, Gewaehrleistung, Provisionen, Bankgebuehren, sonstige Kosten), die sonst stillschweigend unter den Tisch gefallen waeren. Belegt: von allen 6xxxxx-Konten mit Produktgruppe geht jedes einzelne auf 'sba' (7 von 7 in der Einzelliste). Die Regel greift NUR, wenn kein Einzeleintrag passt, und bucht nicht um - eine Fracht-Umbuchung muss weiterhin einzeln hinterlegt werden. Per Regel zugeordnete Konten werden im Ergebnis ausgewiesen, damit sie nicht unbemerkt bleiben.",
+  "deckungsdifferenz_umlage": {
+    "11": {
+      "zeile": "mgk_deckungsdifferenz",
+      "sign": 1
+    },
+    "218": {
+      "zeile": "mgk_deckungsdifferenz",
+      "sign": 1
+    },
+    "21": {
+      "zeile": "fek_deckungsdifferenz",
+      "sign": 1
+    },
+    "3": {
+      "zeile": "vvgk_deckungsdifferenz",
+      "sign": 1
+    },
+    "4": {
+      "zeile": "vvgk_deckungsdifferenz",
+      "sign": 1
+    },
+    "7": {
+      "zeile": "sonderposten",
+      "sign": -1
+    },
+    "9": {
+      "zeile": "sonderposten",
+      "sign": -1
+    }
+  },
+  "deckungsdifferenz_umlage_hinweis": "Ordnet die Umlage-Kostenarten der Kostentraeger-Auswertung ('U' + Kostenstellennummer, Bezeichnung 'Umlage DDIFF ...') den drei Deckungsdifferenz-Zeilen zu. Schluessel ist der Anfang der Kostenstellennummer; es gilt der LAENGSTE passende Eintrag, deshalb steht '218' (QS) vor '21' (uebrige Fertigung). Die Zuordnung folgt dem Kostenstellenplan und der Beschriftung der Referenzrechnung: 'MGK Deckungsdifferenz (Lager, Einkauf; QS)'. Verifiziert an Q1 2026: FEK- und MGK-Deckungsdifferenz 16 von 16 Sparten centgenau, VVGK 13 von 16 - die drei uebrigen widersprechen in der Referenz ihrer eigenen Zeile 'VVGK nach Deckungsdifferenz'. Kommt eine Umlage-Kostenart vor, die hier keinen Eintrag trifft, wird sie mit Betrag gemeldet statt still uebergangen. Vorzeichen: Die Deckungsdifferenzen werden vom Ergebnis ABGEZOGEN (positiv = Unterdeckung = Kosten), die Zeile 'Sonderposten' wird zum DB III ADDIERT - Kosten stehen dort also negativ, daher sign -1."
 }

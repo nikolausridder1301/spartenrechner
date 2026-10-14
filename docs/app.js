@@ -10,6 +10,7 @@ const errorBox = document.getElementById("error");
 
 let pyodide = null;
 let kptmFile = null;
+let kostentraegerFile = null;
 let pwbsAnfangFile = null;
 let pwbsEndeFile = null;
 let pfakFiles = [];
@@ -34,6 +35,12 @@ function setupDropzone(zoneId, textId, inputId, onFile) {
 
 setupDropzone("dropzone-kptm", "dropzone-kptm-text", "file-kptm", (file, zone, text) => {
   kptmFile = file;
+  zone.classList.add("has-file");
+  text.textContent = "✓ " + file.name;
+});
+
+setupDropzone("dropzone-kt", "dropzone-kt-text", "file-kt", (file, zone, text) => {
+  kostentraegerFile = file;
   zone.classList.add("has-file");
   text.textContent = "✓ " + file.name;
 });
@@ -83,6 +90,14 @@ const INFO_TEXTE = {
     Fertigungsauftrag, kumuliert seit Jahresbeginn bis zum gew&uuml;nschten Stichtag.
     <strong>Warum</strong>Grundlage der gesamten Rechnung &ndash; daraus werden Erl&ouml;se, Kosten
     und Deckungsbeitr&auml;ge je Sparte berechnet.`,
+  "kostentraeger": `<strong>Woher</strong>Von der Buchhaltung: Auswertung aus dem ERP (Penta)
+    nach <em>Kostentr&auml;gern</em>, gezogen nach dem Monatsabschluss. Sie kommt meist zusammen
+    mit der Auswertung nach Kostenstellen &ndash; gebraucht wird nur die nach Kostentr&auml;gern.
+    <strong>Was</strong>Die Kosten je Produktgruppe, einschlie&szlig;lich der Umlage der
+    Deckungsdifferenzen (&bdquo;Umlage DDIFF&ldquo;) aus jeder Kostenstelle.
+    <strong>Warum</strong>Daraus kommen die FEK-, MGK- und VVGK-Deckungsdifferenz je Sparte &ndash;
+    der Unterschied zwischen kalkulierten und tats&auml;chlichen Gemeinkosten. Ohne sie fehlen
+    DB&nbsp;I bis DB&nbsp;III.`,
   "pwbs-ende": `<strong>Woher</strong>ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;, Stichtag = letzter
     Tag des Auswertungszeitraums.
     <strong>Was</strong>Alle Fertigungsauftr&auml;ge, die an diesem Stichtag noch nicht fertiggemeldet
@@ -408,6 +423,10 @@ form.addEventListener("submit", async (e) => {
     showError("Bitte zuerst die KPTM_Wertsummen-Datei auswählen.");
     return;
   }
+  if (!kostentraegerFile) {
+    showError("Bitte die Kostenträger-Auswertung der Buchhaltung auswählen.");
+    return;
+  }
   if (!pwbsEndeFile) {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
     return;
@@ -421,11 +440,12 @@ form.addEventListener("submit", async (e) => {
   submitBtn.textContent = "Wird berechnet …";
 
   try {
-    // Unter dem Originalnamen ablegen: Fehlermeldungen nennen dann die Datei, die
-    // der Nutzer ausgewaehlt hat, und aus dem Namen laesst sich notfalls der
-    // Zeitraum lesen, falls dem Export die Periodenspalten fehlen.
-    const kptmPfad = "/" + kptmFile.name.replace(/[^\w.-]+/g, "_");
-    pyodide.FS.writeFile(kptmPfad, new Uint8Array(await kptmFile.arrayBuffer()));
+    // Unter dem Originalnamen ablegen, je Feld in einem eigenen Ordner: Fehlermeldungen
+    // nennen dann genau die Datei, die der Nutzer ausgewaehlt hat (wichtig, wenn jemand
+    // die Kostenstellen- mit der Kostentraeger-Auswertung verwechselt), und aus dem
+    // KPTM-Namen laesst sich notfalls der Zeitraum lesen.
+    const kptmPfad = await ablegen("/kptm", kptmFile);
+    const ktPfad = await ablegen("/kostentraeger", kostentraegerFile);
 
     // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
     // Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante, eine PWBS-Datei
@@ -447,11 +467,11 @@ form.addEventListener("submit", async (e) => {
       pwbsAArg = JSON.stringify("/pwbs_anfang" + extA);
     }
 
-    letzterLauf = { kptmPfad, pwbsAArg, pwbsEArg, pfakArg };
+    letzterLauf = { kptmPfad, ktPfad, pwbsAArg, pwbsEArg, pfakArg };
     manuelleZuordnung = {};   // neuer Lauf mit neuen Dateien: alte Zuordnungen verwerfen
     await berechnen();
   } catch (err) {
-    showError("Fehler bei der Verarbeitung: " + err);
+    showError(fehlertext(err));
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = "Spartenrechnung erstellen";
@@ -476,6 +496,7 @@ summary = spartenrechnung_core.generate(
     ${JSON.stringify(L.kptmPfad)}, "/config", "/output.xlsx",
     pwbs_anfang=${L.pwbsAArg}, pwbs_ende=${L.pwbsEArg}, pfak_pfade=${L.pfakArg},
     manuelle_zuordnung=${manuellArg},
+    kostentraeger_pfad=${JSON.stringify(L.ktPfad)},
 )
 json.dumps(summary)
   `);
@@ -523,6 +544,11 @@ function showResult(summary, url, filename) {
     const std = summary.unproduktive_stunden.toLocaleString("de-DE", {maximumFractionDigits: 0});
     html += summaryZeile(`Nicht auf Kostenträger gebuchte Stunden (${std} h)`,
       eurF(summary.unproduktive_gemeinkosten) + " €", "unproduktiv");
+  }
+
+  const dd = summary.deckungsdifferenzen || {};
+  if (dd.hinweise && dd.hinweise.length) {
+    html += `<div class="warning-box">⚠️ Deckungsdifferenzen: ${dd.hinweise.join(" ")}</div>`;
   }
 
   if (summary.mgk_hinweise && summary.mgk_hinweise.length) {
@@ -704,11 +730,31 @@ spartenrechnung_core.schreibe_betriebsparameter_excel(
       try {
         await berechnen();
       } catch (err) {
-        showError("Fehler bei der Neuberechnung: " + err);
+        showError(fehlertext(err));
       }
     });
   }
   resultBox.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* Legt eine hochgeladene Datei im virtuellen Dateisystem ab - in einem eigenen Ordner
+   je Feld und unter ihrem echten Namen (nur Pfadtrenner werden ersetzt). */
+async function ablegen(ordner, datei) {
+  try { pyodide.FS.mkdir(ordner); } catch (e) { /* existiert schon */ }
+  const pfad = ordner + "/" + datei.name.replace(/[/\\]/g, "_");
+  pyodide.FS.writeFile(pfad, new Uint8Array(await datei.arrayBuffer()));
+  return pfad;
+}
+
+/* Aus einem Python-Fehler nur die Meldung holen. Die Pruefungen im Kern (falsche Datei,
+   fehlende Spalten, falscher Zeitraum) werfen ValueError mit einem Satz, der sagt, was zu
+   tun ist - der stand bisher am Ende eines Tracebacks, den niemand liest. Bei allen
+   anderen Fehlern bleibt der volle Text stehen, der wird zur Fehlersuche gebraucht. */
+function fehlertext(err) {
+  const text = String((err && err.message) || err).trim();
+  const letzte = text.split("\n").pop();
+  const m = letzte.match(/^ValueError: (.+)$/);
+  return m ? m[1] : text;
 }
 
 function showError(msg) {

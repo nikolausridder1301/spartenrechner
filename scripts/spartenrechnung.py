@@ -34,6 +34,13 @@ def find_kptm_file(rohdaten_dir):
     return candidates[0]
 
 
+def find_kostentraeger_file(rohdaten_dir):
+    """Die Kostentraeger-Auswertung der Buchhaltung, falls im Ordner abgelegt."""
+    treffer = [p for p in glob.glob(os.path.join(rohdaten_dir, "Kosten*r*ger*.xls*"))
+               if "stelle" not in os.path.basename(p).lower()]
+    return treffer[0] if treffer else None
+
+
 def main():
     ap = argparse.ArgumentParser(description="Erzeugt automatisiert eine Spartenrechnung aus ERP-Rohdaten (KPTM_Wertsummen).")
     ap.add_argument("--rohdaten", required=True, help="Ordner mit den ERP-Rohdaten-Exporten fuer den Zeitraum")
@@ -48,6 +55,10 @@ def main():
                     help="Optional: eine oder mehrere PFAK-Dateien fuer die Zuordnung Auftrag -> Produktgruppe. "
                          "Mehrere angeben, inkl. der FOLGE-Zeitraeume: am Stichtag noch laufende Auftraege werden "
                          "erst spaeter fertiggemeldet und fehlen sonst in der Zuordnung.")
+    ap.add_argument("--kostentraeger",
+                    help="Kostentraeger-Auswertung der Buchhaltung (Penta, Objekttyp Kostentraeger) "
+                         "fuer die drei Deckungsdifferenzen. Ohne Angabe wird im Rohdaten-Ordner "
+                         "nach 'Kostentraeger*.xls' gesucht.")
     args = ap.parse_args()
 
     kptm_path = find_kptm_file(args.rohdaten)
@@ -62,6 +73,7 @@ def main():
         kptm_path, CONFIG_DIR, args.output, zeitraum=args.zeitraum,
         bwa_path=args.bwa, bwa_sheet=args.bwa_sheet,
         pwbs_anfang=args.pwbs_anfang, pwbs_ende=args.pwbs_ende, pfak_pfade=args.pfak,
+        kostentraeger_pfad=args.kostentraeger or find_kostentraeger_file(args.rohdaten),
     )
 
     print(f"{summary['zeilen']} Zeilen geladen. Zeitraum: {summary['zeitraum']}")
@@ -86,6 +98,14 @@ def main():
         print(f"HINWEIS (Bestandsveraenderung UFE): {h}", file=sys.stderr)
     for w in summary.get("ufe_warnungen", []):
         print(f"WARNUNG (Bestandsveraenderung UFE nicht berechnet): {w}", file=sys.stderr)
+    dd = summary.get("deckungsdifferenzen") or {}
+    if dd.get("geladen"):
+        print("Deckungsdifferenzen aus der Kostentraeger-Auswertung uebernommen.")
+    else:
+        print("HINWEIS: Keine Kostentraeger-Auswertung - die drei Deckungsdifferenzen bleiben leer.",
+              file=sys.stderr)
+    for h in dd.get("hinweise", []):
+        print(f"WARNUNG (Deckungsdifferenzen): {h}", file=sys.stderr)
     if summary.get("per_regel_zugeordnet"):
         print("HINWEIS: nach Kontenregel zugeordnet (nicht einzeln hinterlegt): "
               + ", ".join(summary["per_regel_zugeordnet"]), file=sys.stderr)

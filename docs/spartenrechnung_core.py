@@ -308,6 +308,7 @@ _PFLICHTSPALTEN = {
     "KPTM": ["Kostenart", "Produktgruppe", "Wertart", "Wert/Menge"],
     "PWBS": ["Rückmeldenummer", "Artikelnummer", "Offener Wert"],
     "PFAK": ["RUECKMELDE_NR", "PRODUKTGRUPPE"],
+    "Kostenträger": ["Objekttyp", "Kostenobjekt", "Kostenart", "Wert/Menge"],
 }
 
 
@@ -637,7 +638,7 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
 
     Die Schwelle von 1 % ist an der Referenzrechnung geeicht, nicht geraten:
       Restluecke 0,1 %  ->  13 von 13 Sparten centgenau
-      Restluecke 4,7 %  ->   6 Sparten falsch, groesste Abweichung 27.957 EUR
+      Restluecke 4,7 %  ->   6 Sparten falsch, groesste Abweichung fuenfstellig
     Die nicht zuordenbaren Auftraege verteilen sich also keineswegs gleichmaessig -
     schon wenige Prozent Luecke koennen eine einzelne Sparte deutlich verfaelschen.
     """
@@ -884,10 +885,11 @@ def unproduktive_gemeinkosten(df, mapping):
       verrechnete FEK + unproduktive Gemeinkosten stimmen mit der Zeile
       'FEK nach Deckungsdifferenz (IST)' auf 0,25 % ueberein.
 
-    Der Betrag wird bewusst NICHT auf die Sparten verteilt: Welcher Schluessel die
-    Referenzrechnung reproduziert, liess sich nicht ermitteln (bestes falsifizierbares
-    Modell verfehlt um 21.396 EUR). Er wird nur als Information ausgewiesen - damit ist
-    bekannt, welcher Betrag zu verteilen waere, sobald der BAB vorliegt.
+    Der Betrag wird hier NICHT auf die Sparten verteilt - das tut die Buchhaltung im
+    Monatsabschluss je Kostenstelle; das Ergebnis kommt ueber die Kostentraeger-
+    Auswertung herein (siehe lade_deckungsdifferenzen). Aus dem KPTM allein liess sich
+    kein Schluessel finden, der die Referenz reproduziert. Die Zahl bleibt als
+    Information stehen: Sie zeigt, WORAUS die FEK-Unterdeckung besteht.
     """
     kst_prefix = mapping["kostenstellen_praefix"]
     kst_wertart = mapping.get("kostenstellen_wertart", "ISWF")
@@ -898,6 +900,92 @@ def unproduktive_gemeinkosten(df, mapping):
              & (df["Auftragsart"].isin(arten))]
     betrag = float(sub["Wert/Menge"].sum())
     return betrag, (betrag / satz if satz else 0.0)
+
+
+DD_ZEILEN = ("fek_deckungsdifferenz", "mgk_deckungsdifferenz", "vvgk_deckungsdifferenz")
+
+
+def umlage_regel(kostenart, regeln):
+    """Zu welcher Zeile gehoert eine Umlage-Kostenart ('U' + Kostenstellennummer)?
+
+    Es gilt der laengste passende Praefix der Kostenstellennummer: '218' (QS, gehoert
+    laut Referenz zur MGK-Differenz) muss vor '21' (uebrige Fertigung) greifen.
+    Liefert {"zeile", "sign"} oder None, wenn keine Regel passt - der Aufrufer meldet
+    das dann.
+    """
+    nummer = str(kostenart)[1:]
+    treffer = [p for p in regeln if nummer.startswith(p)]
+    return regeln[max(treffer, key=len)] if treffer else None
+
+
+def lade_deckungsdifferenzen(pfad, mapping):
+    """Liest die Deckungsdifferenzen je Sparte aus der Kostentraeger-Auswertung.
+
+    Die Buchhaltung verteilt im Monatsabschluss die Ueber-/Unterdeckung jeder
+    Kostenstelle ('Umlage DDIFF <Kostenstelle>', Kostenart 'U' + Kostenstellennummer)
+    auf die Kostentraeger. Die Kostentraeger-Auswertung zeigt das Ergebnis bereits je
+    Produktgruppe - es muss also nichts geschaetzt oder verteilt werden, nur jede
+    Kostenstelle dem richtigen der drei Toepfe zugeordnet werden (siehe
+    'deckungsdifferenz_umlage' in der Konfiguration).
+
+    Vorher war das die groesste Luecke der Rechnung: der KPTM-Export enthaelt nur die
+    VERRECHNETE Seite, die Ist-Kosten der Kostenstellen kommen darin nicht vor. Mehrere
+    Verteilungsmodelle liessen sich nicht gegen die Referenz bestaetigen - kein Wunder,
+    die Verteilung laeuft je Kostenstelle ueber deren eigene Bezugsgroessen.
+
+    Verifiziert an Q1 2026: FEK- und MGK-Deckungsdifferenz 16 von 16 Kostentraegern
+    centgenau, VVGK 13 von 16. Die drei uebrigen widersprechen
+    in der Referenz ihrer eigenen Zeile 'VVGK nach Deckungsdifferenz' - dort, wo es ins
+    DB III einfliesst, stimmt die Referenz mit diesem Wert ueberein.
+
+    Liefert (werte, befund):
+      werte  = {zeile: {kostenobjekt: betrag}}   - auch Nicht-Sparten wie 712000
+      befund = {"unbekannt": {kostenart: betrag}, "zeilen_umlage": n,
+                "zeilen_gesamt": n, "perioden": (von, bis, jahr_von, jahr_bis),
+                "umlage_df": DataFrame der Umlagezeilen (fuer das Datenblatt)}
+    """
+    df = pd.read_excel(pfad, sheet_name="Penta")
+    df.columns = [str(c).strip() for c in df.columns]
+    _pruefe_datei(df, "Kostenträger", pfad)
+
+    # Die Kostenstellen-Auswertung hat exakt dieselben Spalten und kommt im selben
+    # Paket von der Buchhaltung - eine Verwechslung ist naheliegend und fiele an den
+    # Spalten nicht auf. Erkennbar ist sie nur am Objekttyp.
+    objekttypen = set(df["Objekttyp"].dropna().astype(str).str.strip())
+    if objekttypen and objekttypen != {"Kostenträger"}:
+        name = os.path.basename(str(pfad))
+        raise ValueError(
+            f"'{name}' enthaelt Objekttyp {', '.join(sorted(objekttypen))} - gebraucht wird "
+            f"die Auswertung nach KOSTENTRAEGERN, nicht nach Kostenstellen. Beide Dateien "
+            f"kommen gemeinsam von der Buchhaltung und haben dieselben Spalten.")
+
+    df["Kostenart"] = df["Kostenart"].astype(str).str.strip()
+    df["Kostenobjekt"] = (df["Kostenobjekt"].astype(str).str.strip()
+                          .str.replace(r"\.0$", "", regex=True))
+    df["Wert/Menge"] = pd.to_numeric(df["Wert/Menge"], errors="coerce").fillna(0.0)
+
+    regeln = mapping.get("deckungsdifferenz_umlage", {})
+    umlage = df[df["Kostenart"].str.match(r"^U\d")].copy()
+    treffer = umlage["Kostenart"].map(lambda ka: umlage_regel(ka, regeln))
+    umlage["Zeile"] = treffer.map(lambda r: r["zeile"] if r else "")
+    umlage["Vorzeichen"] = treffer.map(lambda r: r["sign"] if r else 0)
+
+    werte, unbekannt = {}, {}
+    for (ka, ko, zeile, vz), betrag in umlage.groupby(
+            ["Kostenart", "Kostenobjekt", "Zeile", "Vorzeichen"])["Wert/Menge"].sum().items():
+        if not zeile:
+            unbekannt[ka] = unbekannt.get(ka, 0.0) + float(betrag)
+            continue
+        werte.setdefault(zeile, {})
+        werte[zeile][ko] = werte[zeile].get(ko, 0.0) + vz * float(betrag)
+
+    return werte, {
+        "unbekannt": {k: round(v, 2) for k, v in unbekannt.items() if abs(v) > 0.005},
+        "zeilen_umlage": len(umlage),
+        "zeilen_gesamt": len(df),
+        "perioden": _perioden_aus_daten(df),
+        "umlage_df": umlage,
+    }
 
 
 def zuschlagssaetze(result, mapping):
@@ -1096,7 +1184,7 @@ def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
 
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
                  stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None,
-                 ufe_warnungen=None):
+                 ufe_warnungen=None, zeilen_klasse=None, deckungsdifferenzen=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -1133,7 +1221,7 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
             continue
         zeilen_nr[key] = row_i
         label_cell = ws.cell(row=row_i, column=1, value=labels.get(key, key))
-        klass = ZEILEN_KLASSE.get(key, "manual")
+        klass = (zeilen_klasse or {}).get(key) or ZEILEN_KLASSE.get(key, "manual")
         # Eine zurueckgehaltene UFE-Zeile darf NICHT gruen erscheinen. Gruen heisst
         # laut Legende "automatisch berechnet, gegen die Referenz geprueft" - hier
         # steht aber eine 0,00, weil das Tool die Zahl bewusst verweigert. Wer nur
@@ -1264,6 +1352,31 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
             ws3.column_dimensions[get_column_letter(j)].width = 17
 
     ws2 = wb.create_sheet("Hinweise")
+    dd = deckungsdifferenzen or {}
+    if dd.get("geladen"):
+        dd_abschnitt = [
+            "AUS DER KOSTENTRAEGER-AUSWERTUNG (gruen) - FEK-/MGK-/VVGK-Deckungsdifferenz:",
+            "- Die Buchhaltung verteilt im Monatsabschluss die Ueber-/Unterdeckung jeder Kostenstelle",
+            "  auf die Kostentraeger ('Umlage DDIFF <Kostenstelle>', Kostenart U + Kostenstellennummer).",
+            "  Die Kostentraeger-Auswertung zeigt das Ergebnis bereits je Produktgruppe. Zugeordnet wird",
+            "  nur, welche Kostenstelle in welchen Topf gehoert (Regel im Blatt 'Mapping'):",
+            "     Einkauf/Lager (11...) und QS (218...)   ->  MGK-Deckungsdifferenz",
+            "     uebrige Fertigung (21...)               ->  FEK-Deckungsdifferenz",
+            "     Verwaltung (3...) und Vertrieb (4...)   ->  VVGK-Deckungsdifferenz",
+            "  Geprueft an Q1 2026: FEK und MGK 16 von 16 Sparten centgenau, VVGK 13 von 16. Die drei",
+            "  uebrigen widersprechen in der Referenz ihrer eigenen Zeile 'VVGK nach Deckungsdifferenz' -",
+            "  dort, wo es ins DB III einfliesst, stimmt die Referenz mit diesem Wert ueberein.",
+            "  Die einzelnen Umlagezeilen stehen im Blatt 'Daten_Kostentraeger'.",
+        ] + (["", "  ACHTUNG:"] + ["  - " + h for h in dd.get("hinweise", [])]
+             if dd.get("hinweise") else [])
+    else:
+        dd_abschnitt = [
+            "MANUELL ZU ERGAENZEN (rosa) - FEK-/MGK-/VVGK-Deckungsdifferenz:",
+            "- Gegenueberstellung der ueber die Kostentraeger VERRECHNETEN Betraege (die gruenen Zeilen",
+            "  oben) mit den TATSAECHLICHEN Kostenstellenkosten. Der KPTM-Export enthaelt nur die",
+            "  verrechnete Seite. Die Differenzen kommen aus der Kostentraeger-Auswertung der Buchhaltung",
+            "  (Penta, Objekttyp Kostentraeger) - die wurde fuer diese Datei nicht mitgegeben.",
+        ] + ["  - " + h for h in dd.get("hinweise", [])]
     hinweise = [
         "Diese Datei wurde automatisiert erzeugt (lokal im Browser, ERP-Export KPTM_Wertsummen / Penta).",
         "",
@@ -1309,31 +1422,13 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         "aehnlicher Posten fuer den jeweils aktuellen Zeitraum - das ist der eigentliche Zweck der Zeile",
         "'Δ zu erklaeren'.",
         "",
-        "MANUELL ZU ERGAENZEN (rosa) - aus den vorliegenden Rohdaten nachweislich NICHT herleitbar:",
-        "- FEK-/MGK-/VVGK-Deckungsdifferenz: Gegenueberstellung der ueber die Kostentraeger VERRECHNETEN",
-        "  Betraege (= die gruenen Zeilen oben) mit den TATSAECHLICHEN Kostenstellenkosten. Die Ist-Seite",
-        "  stammt aus dem BAB (Betriebsabrechnungsbogen). Keiner der sechs ERP-Exporte ist eine",
-        "  Kostenstellenrechnung: die Ist-Kosten der Kostenstellen Lager und Einkauf kommen darin gar",
-        "  nicht vor, QS nur als Stundenbewertung. Ueber 100 Herleitungshypothesen wurden numerisch",
-        "  ausgeschlossen (siehe HERLEITUNG.md im Projekt).",
-        "",
-        "  Bei der FEK-Unterdeckung ist immerhin geklaert, WORAUS sie besteht: aus den Fertigungsstunden,",
-        "  die geleistet und bezahlt, aber auf keinen Kostentraeger gebucht wurden (Auftragsart 5).",
-        "  Rechnerisch: verrechnete FEK + diese unproduktiven Gemeinkosten ergibt den Wert, den die",
-        "  manuelle Referenzrechnung als 'FEK nach Deckungsdifferenz (IST)' ausweist - auf 0,25 % genau.",
-        "  Die Hoehe steht deshalb oben im Blatt. Offen ist nur, nach welchem Schluessel der Betrag auf",
-        "  die einzelnen Sparten verteilt wird; das beste ueberpruefbare Modell verfehlt um 21.396 EUR.",
+        *dd_abschnitt,
         "",
         "STRUKTURELL NULL (grau) - die Zeile gehoert dazu, hat je Sparte aber keinen Inhalt:",
         "- Sonderposten/Einmaleffekte: In der Referenzrechnung traegt diese Zeile in JEDER echten Sparte",
-        "  0,00. Die Betraege (Q1 2026: Photovoltaik -12.440,72, Grundstueck Valluhn -46.486,53) stehen",
-        "  ausschliesslich auf Kostenobjekten, die keine Sparte sind. Eine Kostentraegerrechnung kann sie",
-        "  je Sparte gar nicht ausweisen - hier fehlt also nichts, es ist nichts zu ergaenzen.",
-        "",
-        "HINWEIS ZUM ERP-EXPORT: Die Datei KPTM_Wertsummen ist auf 'Datenbestand = Istdaten' gefiltert",
-        "(alle 15.045 Zeilen tragen diesen Wert) und enthaelt nur die Wertarten ISWV/ISWF/ISMF. Falls die",
-        "gleiche Abfrage ohne diesen Filter auch Soll-/Plandaten liefert, koennten damit die drei",
-        "Deckungsdifferenzen automatisiert werden - das waere der naechste sinnvolle Ausbauschritt.",
+        "  0,00. Die Betraege (Photovoltaik, Grundstueck Valluhn) stehen ausschliesslich auf",
+        "  Kostenobjekten, die keine Sparte sind. Eine Kostentraegerrechnung kann sie je Sparte gar",
+        "  nicht ausweisen - hier fehlt also nichts, es ist nichts zu ergaenzen.",
         "",
         "Quelle: " + zeitraum,
     ]
@@ -1366,8 +1461,68 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
     wb.save(out_path)
 
 
+def deckungsdifferenzen_einsetzen(result, kostentraeger_pfad, mapping, kptm_df):
+    """Setzt die Deckungsdifferenzen (und Sonderposten) aus der Kostentraeger-Auswertung
+    in das Ergebnis ein. Liefert (result, befund) - befund ist None, wenn die Datei
+    nichts Verwertbares enthielt; dann bleiben die Zeilen wie sie waren (rosa).
+    """
+    werte, befund = lade_deckungsdifferenzen(kostentraeger_pfad, mapping)
+
+    # Beide Dateien muessen denselben Zeitraum abdecken. Eine Kostentraeger-Auswertung
+    # zu Q1 neben einem KPTM-Export Jan-Juni ergaebe Deckungsdifferenzen, die nicht zu
+    # den uebrigen Zeilen passen - plausibel aussehend und still falsch.
+    kptm_spanne, kt_spanne = _perioden_aus_daten(kptm_df), befund["perioden"]
+    if kptm_spanne and kt_spanne and kptm_spanne != kt_spanne:
+        def text(s):
+            von, bis, j1, j2 = s
+            return f"Periode {von}-{bis}/{j2}" if j1 == j2 else f"Periode {von}/{j1}-{bis}/{j2}"
+        raise ValueError(
+            f"Die Kostentraeger-Auswertung umfasst {text(kt_spanne)}, der KPTM-Export aber "
+            f"{text(kptm_spanne)}. Beide muessen denselben Zeitraum abdecken - sonst passen "
+            f"die Deckungsdifferenzen nicht zu den uebrigen Zeilen.")
+
+    befund["hinweise"] = []
+    if not befund["zeilen_umlage"]:
+        # Die Umlage laeuft erst im Monatsabschluss. Ein frueher gezogener Export hat
+        # die Zeilen noch nicht - dann waeren die Differenzen 0,00, und das saehe
+        # genauso aus wie "keine Differenz".
+        befund["hinweise"].append(
+            "Die Kostentraeger-Auswertung enthaelt keine einzige Umlagezeile ('Umlage DDIFF', "
+            "Kostenart U...). Vermutlich wurde sie vor der Abschlussbuchung der "
+            "Deckungsdifferenzen gezogen. Die drei Zeilen bleiben deshalb leer - bitte den "
+            "Export nach dem Monatsabschluss erneut ziehen.")
+        befund["geladen"] = False
+        return result, befund
+
+    sparten = [c for c in result.columns if c != "Summe"]
+    ohne_spalte = {}
+    for zeile, je_objekt in werte.items():
+        if zeile not in result.index:
+            continue
+        for objekt, betrag in je_objekt.items():
+            if objekt in sparten:
+                result.loc[zeile, objekt] = betrag
+            elif _ist_sparte(objekt) and abs(betrag) > 0.005:
+                ohne_spalte[objekt] = ohne_spalte.get(objekt, 0.0) + betrag
+    if ohne_spalte:
+        befund["hinweise"].append(
+            "Deckungsdifferenzen auf Sparten, die im KPTM-Export gar nicht vorkommen und "
+            "deshalb keine Spalte haben - diese Betraege fehlen in der Rechnung: "
+            + ", ".join(f"{k} ({v:,.2f} EUR)" for k, v in sorted(ohne_spalte.items())))
+    if befund["unbekannt"]:
+        befund["hinweise"].append(
+            "Umlage-Kostenarten ohne Zuordnung zu einer der drei Zeilen - diese Betraege "
+            "fehlen in der Rechnung: "
+            + ", ".join(f"{k} ({v:,.2f} EUR)" for k, v in sorted(befund["unbekannt"].items()))
+            + ". Abhilfe: Kostenstellenbereich in 'deckungsdifferenz_umlage' "
+              "(config/kostenart_mapping.json) ergaenzen.")
+    befund["geladen"] = True
+    return neu_berechnen(result), befund
+
+
 def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_sheet=None,
-             pwbs_anfang=None, pwbs_ende=None, pfak_pfade=None, manuelle_zuordnung=None):
+             pwbs_anfang=None, pwbs_ende=None, pfak_pfade=None, manuelle_zuordnung=None,
+             kostentraeger_pfad=None):
     """Ein-Funktions-Einstieg fuer die Weboberflaeche: liest KPTM (+optional BWA,
     +optional Werkstattbestand fuer die Bestandsveraenderung UFE), berechnet die
     Spartenrechnung und schreibt die Ausgabedatei. Gibt eine kurze Zusammenfassung
@@ -1386,6 +1541,19 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         mapping["standard_stundensatz"] = satz
     result, produktgruppen, unmapped, per_regel, befunde = build_spartenrechnung(
         df, mapping, pg_config)
+
+    dd_befund = None
+    if kostentraeger_pfad:
+        result, dd_befund = deckungsdifferenzen_einsetzen(result, kostentraeger_pfad, mapping, df)
+    dd_geladen = bool(dd_befund and dd_befund.get("geladen"))
+    # Geladene Deckungsdifferenzen sind gruen, nicht mehr rosa. Die Sonderposten-Zeile
+    # nur dann, wenn tatsaechlich etwas auf einer Sparte landet - sonst bleibt sie grau.
+    zeilen_klasse = {}
+    if dd_geladen:
+        zeilen_klasse.update({z: "auto" for z in DD_ZEILEN})
+        sparten = [c for c in result.columns if c != "Summe"]
+        if (result.loc["sonderposten", sparten].abs() > 0.005).any():
+            zeilen_klasse["sonderposten"] = "auto"
 
     ufe_warnungen = []
     ufe_statistik = None
@@ -1415,7 +1583,12 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
                  stunden_df=stunden_df, unproduktiv=(unprod_betrag, unprod_stunden),
                  pg_bezeichnungen=pg_config.get("bezeichnung", {}),
                  ufe_warnungen=ufe_warnungen if pwbs_ende else None,
+                 zeilen_klasse=zeilen_klasse,
+                 deckungsdifferenzen=dd_befund,
                  herleitung={
+                     "kostentraeger": ({"umlage": dd_befund["umlage_df"],
+                                        "zeilen_gesamt": dd_befund["zeilen_gesamt"]}
+                                       if dd_geladen else None),
                      "produktgruppen": produktgruppen,
                      "kptm_df": df,
                      "pwbs_ende": pwbs_ende,
@@ -1454,6 +1627,11 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         "mgk_hinweise": satz_hinweise,
         "unproduktive_gemeinkosten": unprod_betrag,
         "unproduktive_stunden": unprod_stunden,
+        "deckungsdifferenzen": {
+            "geladen": dd_geladen,
+            "hinweise": (dd_befund or {}).get("hinweise", []),
+            "summen": {z: float(result.loc[z, "Summe"]) for z in DD_ZEILEN} if dd_geladen else {},
+        },
         "db3_summe": float(result.loc["db3", "Summe"]),
         "erloese_summe": float(result.loc["erloese", "Summe"]),
     }

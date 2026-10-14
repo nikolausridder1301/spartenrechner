@@ -23,6 +23,9 @@ speichert. Der Quellcode der Seite liegt unter `docs/`.
    z.B. `rohdaten/2026/Q1/` oder `rohdaten/2026/02/` für Februar.
    Mindestens benötigt: die Datei `KPTM_Wertsummen_*.xls` aus der SQL-Abfrage
    ans ERP-System (kumuliert seit Jahresbeginn bis zum gewünschten Stichtag).
+   Für die drei Deckungsdifferenzen zusätzlich die **Kostenträger-Auswertung** der
+   Buchhaltung (`Kostenträger <Zeitraum>.xls`, Penta, Objekttyp „Kostenträger",
+   nach dem Monatsabschluss gezogen) – sie wird im Ordner automatisch gefunden.
 2. Skript ausführen:
 
    ```bash
@@ -51,8 +54,9 @@ widerlegten Hypothesen – steht in `intern/HERLEITUNG.md` (privates Repository)
 Erlöse, Bestandsveränderung FE, **Bestandsveränderung UFE**, Material,
 Fremdleistungen, sbA, FEK, MGK und overhead Kosten – und damit die komplette
 obere GuV bis einschließlich **Rohmarge I**. Von 266 vergleichbaren Zellen
-stimmen 145 auf den Cent und 15 liegen im Rundungsbereich; alle übrigen hängen
-an den Deckungsdifferenzen. Zusätzlich erzeugt das Tool das Blatt
+stimmen **239 auf den Cent**, 26 liegen im Rundungsbereich (Buchungsstand des
+KPTM-Exports), **eine** weicht ab – dort widerspricht die Referenz ihrer eigenen
+Folgezeile. Zusätzlich erzeugt das Tool das Blatt
 **Fertigungsstunden** – die bisher separat manuell gepflegte Auswertung der
 Fertigungsaufträge je Kostenstelle (70 von 70 Zellen centgenau).
 
@@ -63,13 +67,20 @@ zusätzlicher Ausweis wäre Doppelzählung. In der Referenzrechnung stehen Werte
 ausschließlich auf Sonder-Kostenobjekten („Abgrenzungen Walkenried",
 „Weiterberechnung Valluhn"). Belege in `intern/HERLEITUNG.md`.
 
-**Manuell zu ergänzen** (rosa) – nur noch zwei Positionen:
-- **FEK-/MGK-/VVGK-Deckungsdifferenz**: Das ERP liefert nur die *verrechnete*
-  Seite; die *Ist*-Seite kommt aus dem BAB (Betriebsabrechnungsbogen). Keiner der
-  sechs Exporte ist eine Kostenstellenrechnung – die Kostenstellen Lager und
-  Einkauf kommen darin gar nicht vor. Über 100 Herleitungshypothesen wurden
-  numerisch ausgeschlossen (siehe `intern/HERLEITUNG.md`).
-- **Sonderposten/Einmaleffekte**: bewusste Einzelfall-Entscheidungen je Periode.
+**Aus der Kostenträger-Auswertung** (grün): **FEK-/MGK-/VVGK-Deckungsdifferenz**.
+Der KPTM-Export enthält nur die *verrechnete* Seite. Die Buchhaltung verteilt im
+Monatsabschluss die Über-/Unterdeckung jeder Kostenstelle auf die Kostenträger
+(„Umlage DDIFF", Kostenart `U` + Kostenstellennummer); die Kostenträger-Auswertung
+zeigt das Ergebnis bereits je Produktgruppe. Zugeordnet wird nur, welche
+Kostenstelle in welchen Topf gehört – Einkauf/Lager und QS zur MGK, die übrige
+Fertigung zur FEK, Verwaltung und Vertrieb zur VVGK (`deckungsdifferenz_umlage` in
+`config/kostenart_mapping.json`). Geprüft an Q1 2026: FEK und MGK 16 von 16 Sparten
+centgenau, VVGK 13 von 16 – die drei übrigen widersprechen in der Referenz ihrer
+eigenen Zeile „VVGK nach Deckungsdifferenz". Fehlt die Datei, bleiben die drei
+Zeilen rosa.
+
+**Strukturell null** (grau): **Sonderposten/Einmaleffekte** – in der Referenz in
+jeder echten Sparte 0,00; die Beträge stehen nur auf Kostenobjekten ohne Sparte.
 
 Die genaue Konten-Zuordnung steht in `config/kostenart_mapping.json` und
 `config/produktgruppen.json` und kann dort angepasst werden – z.B. wenn durch die
@@ -141,15 +152,10 @@ Abweichung 0,00 € über alle 14 Sparten).
 
 ## Was beim Controlling angefragt werden müsste
 
-Drei Punkte würden die verbleibenden Lücken schließen:
+Die Deckungsdifferenzen sind mit der Kostenträger-Auswertung gelöst. Offen ist
+noch ein Punkt:
 
-1. **BAB Q1/2026** mit Ist-Kosten je Fertigungskostenstelle und dem verwendeten
-   Umlageschlüssel → automatisiert alle drei Deckungsdifferenzen (die einzige
-   inhaltlich noch offene Position).
-2. **`KPTM_Wertsummen` ohne den Filter `Datenbestand = Istdaten`.** Alle 15.045
-   Zeilen des heutigen Exports tragen diesen Wert; enthält dieselbe Tabelle auch
-   Soll-/Plandaten, wären die Deckungsdifferenzen direkt ableitbar.
-3. **`PWBS_Werkstattbestand` mit einer Produktgruppen-Spalte.** Der kleinste
+1. **`PWBS_Werkstattbestand` mit einer Produktgruppen-Spalte.** Der kleinste
    Aufwand der drei und sofort spürbar: eine zusätzliche Spalte in einer
    bestehenden Abfrage, kein neuer Report. Die Produktgruppe hängt im ERP am
    Fertigungsauftrag, sie kommt im Export nur nicht mit. Damit entfällt die

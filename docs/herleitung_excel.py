@@ -39,6 +39,10 @@ from openpyxl.utils import get_column_letter
 KPTM_ZEILEN = {"erloese", "bestand_fe", "material", "fremdleistungen", "personalaufwand",
                "sbe", "sba", "afa", "fek", "mgk", "vvgk", "aktivierte_eigenleistung"}
 
+# Zeilen, die aus den Umlagezeilen der Kostentraeger-Auswertung entstehen
+KOSTENTRAEGER_ZEILEN = {"fek_deckungsdifferenz", "mgk_deckungsdifferenz",
+                        "vvgk_deckungsdifferenz", "sonderposten"}
+
 # Zeilen, die sich aus anderen Zeilen ergeben: Zielzeile -> (Summanden, Subtrahenden)
 ABGELEITET = {
     "betriebsleistung": (["erloese", "bestand_fe", "bestand_ufe", "aktivierte_eigenleistung"], []),
@@ -138,12 +142,33 @@ def _mapping_blatt(wb, mapping, produktgruppen):
     for sp, br in (("I", 30), ("J", 14), ("K", 11)):
         ws.column_dimensions[sp].width = br
     n = max(len(regel), 1)
+
+    # Umlage der Deckungsdifferenzen: welche Kostenstelle in welchen Topf gehoert.
+    # Das Blatt 'Daten_Kostentraeger' schlaegt hier nach - dieselbe Regel wie im
+    # Programm, damit Mappe und Tool nicht auseinanderlaufen koennen.
+    umlage = mapping.get("deckungsdifferenz_umlage", {})
+    kopfzelle(13, "Umlage: Kostenstelle beginnt mit")
+    kopfzelle(14, "Zeile")
+    kopfzelle(15, "Vorzeichen")
+    for i, (praefix, r) in enumerate(sorted(umlage.items()), start=KOPF + 1):
+        ws.cell(row=i, column=13, value=str(praefix))   # Text, damit TEIL() trifft
+        ws.cell(row=i, column=14, value=r["zeile"])
+        ws.cell(row=i, column=15, value=r["sign"])
+    ws.cell(row=KOPF + len(umlage) + 2, column=13, value=(
+        "Es gilt der laengste passende Anfang: 218 (QS) vor 21 (Fertigung). Vorzeichen -1 bei "
+        "Sonderposten, weil diese Zeile zum DB III addiert, die Differenzen aber abgezogen werden."
+    )).font = Font(italic=True, size=9)
+    for sp, br in (("M", 30), ("N", 24), ("O", 11)):
+        ws.column_dimensions[sp].width = br
+    n_umlage = max(len(umlage), 1)
+
     # Begrenzte Bereiche statt ganzer Spalten: bei 60.000 Formeln, die hier
     # nachschlagen, ist der Unterschied beim Neuberechnen deutlich spuerbar.
     letzte_mapping = 3 + len(zeilen)
     return ws, (f"Mapping!$G${KOPF + 1}:$G${KOPF + len(produktgruppen)}",
                 f"Mapping!$I${KOPF + 1}:$K${KOPF + n}",
-                f"Mapping!$A$4:$E${letzte_mapping}")
+                f"Mapping!$A$4:$E${letzte_mapping}",
+                f"Mapping!$M${KOPF + 1}:$O${KOPF + n_umlage}")
 
 
 def _kptm_blatt(wb, df, mapping, bereiche):
@@ -205,7 +230,7 @@ def _kptm_blatt(wb, df, mapping, bereiche):
     wertart = mapping.get("kostenstellen_wertart", "ISWF")
     fracht = mapping.get("umbuchung_fracht_suffix", "0100")
 
-    pg_bereich, regel_bereich, map_bereich = bereiche
+    pg_bereich, regel_bereich, map_bereich = bereiche[:3]
     # Ohne TEXT(...,"@"): die Kostenart steht in beiden Blaettern bereits als Text,
     # die Umwandlung war wirkungslos und hat rund eine Million Zeichen Formeltext
     # gekostet.
@@ -321,6 +346,66 @@ def _pwbs_blatt(wb, pfad, titel, hinweis):
             "sparte": c_sparte, "wert": s_wert}
 
 
+def _umlage_nachschlag(zelle, bereich, spalte, laengen, sonst):
+    """Nachschlagen mit dem LAENGSTEN passenden Anfang der Kostenstellennummer.
+
+    Verschachtelt von innen (kuerzester Praefix) nach aussen (laengster), so dass
+    der laengste zuerst versucht wird - genau wie umlage_regel() im Programm.
+    TEIL(...;2;n) ueberspringt das 'U' der Umlage-Kostenart.
+    """
+    formel = sonst
+    for n in sorted(laengen):
+        formel = f"IFERROR(VLOOKUP(MID({zelle},2,{n}),{bereich},{spalte},FALSE),{formel})"
+    return formel
+
+
+def _kostentraeger_blatt(wb, umlage, zeilen_gesamt, mapping, umlage_bereich):
+    """Die Umlagezeilen der Kostentraeger-Auswertung, mit zwei Hilfsspalten als Formel.
+
+    Nur die Umlagezeilen (Kostenart 'U' + Kostenstellennummer) - nur sie fliessen in
+    die Spartenrechnung ein. Der Rest der Datei ist die vollstaendige Kostentraeger-
+    rechnung der Buchhaltung, deren uebrige Zeilen das Tool aus dem KPTM-Export
+    bezieht; sie hier zu wiederholen, waere doppelt.
+    """
+    spalten = [c for c in ("Kostenobjekt", "KOSTENOBJEKT_BEZ", "Periode", "Kostenart",
+                           "KOSTENART_BEZ", "Wertart", "Wert/Menge") if c in umlage.columns]
+    df = umlage[spalten].copy()
+    df["Kostenobjekt"] = df["Kostenobjekt"].astype(str)
+    ws, erste = _blatt_mit_daten(
+        wb, "Daten_Kostentraeger", df,
+        f"Aus der Kostentraeger-Auswertung der Buchhaltung ({zeilen_gesamt} Zeilen) die "
+        f"{len(df)} Umlagezeilen der Deckungsdifferenzen ('Umlage DDIFF', Kostenart U + "
+        f"Kostenstellennummer). Die gelben Spalten ordnen jede Zeile per Regel aus dem Blatt "
+        f"'Mapping' (Spalten M-O) einer der drei Deckungsdifferenz-Zeilen zu.")
+    letzte = erste + len(df) - 1
+    kopf = erste - 1
+    s = {c: get_column_letter(i) for i, c in enumerate(spalten, start=1)}
+    basis = len(spalten)
+    for k, t in enumerate(("Zeile", "Betrag")):
+        z = ws.cell(row=kopf, column=basis + 1 + k, value=t)
+        z.font = Font(bold=True)
+        z.fill = FILL_HILFS
+    c_zeile, c_betrag = get_column_letter(basis + 1), get_column_letter(basis + 2)
+
+    laengen = {len(str(p)) for p in mapping.get("deckungsdifferenz_umlage", {})} or {1}
+    for r in range(erste, letzte + 1):
+        ka = f"{s['Kostenart']}{r}"
+        ws.cell(row=r, column=basis + 1,
+                value="=" + _umlage_nachschlag(ka, umlage_bereich, 2, laengen, '""'))
+        z = ws.cell(row=r, column=basis + 2, value=(
+            f"={s['Wert/Menge']}{r}*" + _umlage_nachschlag(ka, umlage_bereich, 3, laengen, "0")))
+        z.number_format = "#,##0.00"
+        ws.cell(row=r, column=len(spalten)).number_format = "#,##0.00"
+
+    for sp, br in zip(spalten, (13, 26, 8, 12, 34, 8, 14)):
+        ws.column_dimensions[s[sp]].width = br
+    ws.column_dimensions[c_zeile].width = 24
+    ws.column_dimensions[c_betrag].width = 14
+    ws.auto_filter.ref = f"A{kopf}:{c_betrag}{letzte}"
+    return {"blatt": "Daten_Kostentraeger", "erste": erste, "letzte": letzte,
+            "objekt": s["Kostenobjekt"], "zeile": c_zeile, "betrag": c_betrag}
+
+
 def _kontrollblatt(wb, result, produktgruppen):
     """Die von Python gerechneten Werte, damit die Formeln dagegen pruefbar sind."""
     ws = wb.create_sheet("Kontrolle")
@@ -343,7 +428,8 @@ def _kontrollblatt(wb, result, produktgruppen):
 def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
                           pwbs_ende=None, pwbs_anfang=None, nach_auftrag=None,
                           nach_artikel=None, anfangsbestand=None,
-                          manuelle_zuordnung=None, ufe_berechnet=False):
+                          manuelle_zuordnung=None, ufe_berechnet=False,
+                          kostentraeger=None):
     """Haengt an eine bestehende Mappe die Datenblaetter an und ersetzt die Werte
     im Blatt 'Spartenrechnung' durch Formeln, die auf diese Blaetter zeigen.
 
@@ -351,6 +437,10 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
     """
     _, bereiche = _mapping_blatt(wb, mapping, produktgruppen)
     kptm = _kptm_blatt(wb, kptm_df, mapping, bereiche)
+    kt = None
+    if kostentraeger is not None:
+        kt = _kostentraeger_blatt(wb, kostentraeger["umlage"], kostentraeger["zeilen_gesamt"],
+                                  mapping, bereiche[3])
 
     # Muss VOR den PWBS-Blaettern stehen, weil deren Sparten-Formel hier hineinschlaegt.
     if nach_auftrag is not None or nach_artikel is not None:
@@ -417,7 +507,7 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
     anzahl = _verformele_spartenrechnung(
         wb, result, mapping, produktgruppen, kptm, kontrolle,
         pwbs_e=pwbs_e, pwbs_a=pwbs_a,
-        anfangsbestand_blatt=bool(anfangsbestand), ufe_berechnet=ufe_berechnet)
+        anfangsbestand_blatt=bool(anfangsbestand), ufe_berechnet=ufe_berechnet, kt=kt)
 
     if "Hinweise" in wb.sheetnames:
         ws = wb["Hinweise"]
@@ -459,7 +549,7 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
 
 def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontrolle,
                                 pwbs_e=None, pwbs_a=None, anfangsbestand_blatt=False,
-                                ufe_berechnet=False):
+                                ufe_berechnet=False, kt=None):
     """Ersetzt die Zahlen im Blatt 'Spartenrechnung' durch Formeln auf die Rohdaten."""
     ws = wb["Spartenrechnung"]
 
@@ -548,6 +638,14 @@ def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontr
                 else:
                     continue
                 formel = f"={ende}-{anfang}"
+            elif kt and key in KOSTENTRAEGER_ZEILEN:
+                # Die Kostentraeger-Auswertung ist schon je Produktgruppe gebucht -
+                # es genuegt, ueber das Kostenobjekt und die zugeordnete Zeile zu summieren.
+                b = f"'{kt['blatt']}'!$"
+                formel = (f'=SUMIFS({b}{kt["betrag"]}${kt["erste"]}:${kt["betrag"]}${kt["letzte"]},'
+                          f'{b}{kt["zeile"]}${kt["erste"]}:${kt["zeile"]}${kt["letzte"]},"{key}",'
+                          f'{b}{kt["objekt"]}${kt["erste"]}:${kt["objekt"]}${kt["letzte"]},'
+                          f'{spalte}${kopfzeile})')
             elif key in ABGELEITET:
                 plus, minus = ABGELEITET[key]
                 teile = [f"{spalte}{zeilen_nr[k]}" for k in plus if k in zeilen_nr]
