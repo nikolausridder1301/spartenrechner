@@ -22,6 +22,10 @@ Aufbau der erzeugten Mappe:
                            Handzuordnung zusammengefuehrte Tabelle - deshalb ein
                            eigenes Blatt statt einer Spalte in den Rohdaten
     Betriebsparameter      Anfangsbestaende je Sparte
+    Umschluesselung        nur im Umstellungsjahr: Artikel -> alte/neue Produktgruppe
+                           (Reorganisation 2026). Die Spalte 'Produktgruppe' in
+                           'Daten_KPTM' und die Sparte im Werkstattbestand schlagen
+                           hier nach
     Kontrolle              die von Python gerechneten Werte. Die Spartenrechnung
                            zeigt oben die groesste Abweichung zwischen Formel und
                            Kontrollwert an - steht dort nicht 0,00, stimmt etwas nicht
@@ -83,6 +87,49 @@ def _blatt_mit_daten(wb, titel, df, hinweis=None):
             ws.cell(row=i, column=j, value=wert)
     ws.freeze_panes = ws.cell(row=start + 1, column=1)
     return ws, start + 1
+
+
+UMSCHL = "Umschluesselung"
+
+
+def _umschluesselung_blatt(wb, karte, aufgeloest):
+    """Artikel -> alte/neue Produktgruppe, dazu die aufgeloesten Gruppen.
+
+    Die neue Gruppe steht schon mit aufgeloestem Nachfolger da (wie im Programm, das
+    erst umschluesselt und dann aufgeloeste Gruppen ersetzt) - so bleibt die Formel
+    in den Datenblaettern kurz."""
+    ws = wb.create_sheet(UMSCHL)
+    ws.cell(row=1, column=1, value=(
+        "Produktgruppen-Reorganisation 2026: neue Produktgruppe je Artikel (Quelle: Liste "
+        "'Alte vs Neue Produktgruppen', in den Betriebsparametern hinterlegt). Eine Buchung "
+        "wird nur umgeschluesselt, wenn sie auf der ALTEN Gruppe ihres Artikels steht. "
+        "Rechts: aufgeloeste Gruppen und ihr Nachfolger - fuer Buchungen ohne Artikel."
+    )).font = Font(italic=True, size=9)
+    for j, titel in ((1, "Artikel"), (2, "alte Produktgruppe"), (3, "neue Produktgruppe"),
+                     (5, "aufgeloeste Gruppe"), (6, "Nachfolger")):
+        z = ws.cell(row=3, column=j, value=titel)
+        z.font, z.fill = FONT_WEISS, FILL_DATEN
+    auf = aufgeloest or {}
+    for i, (art, (alt, neu)) in enumerate(sorted(karte.items()), start=4):
+        ws.cell(row=i, column=1, value=str(art))
+        ws.cell(row=i, column=2, value=alt)
+        ws.cell(row=i, column=3, value=auf.get(neu, neu))
+    for i, (weg, nach) in enumerate(sorted(auf.items()), start=4):
+        ws.cell(row=i, column=5, value=weg)
+        ws.cell(row=i, column=6, value=nach)
+    ws.freeze_panes = "A4"
+    for sp, br in (("A", 14), ("B", 18), ("C", 18), ("D", 3), ("E", 18), ("F", 12)):
+        ws.column_dimensions[sp].width = br
+
+
+def _neue_gruppe(pg, art):
+    """Formel: Gruppe 'pg' in die neue Struktur - ueber den Artikel 'art', sonst nur
+    der Nachfolger einer aufgeloesten Gruppe. Entspricht umschluesseln() bzw.
+    neue_struktur() im Programm."""
+    treffer = f'MATCH(TEXT({art},"@"),{UMSCHL}!$A:$A,0)'
+    auf = f"IFERROR(VLOOKUP({pg},{UMSCHL}!$E:$F,2,FALSE),{pg})"
+    return (f"IFERROR(IF(INDEX({UMSCHL}!$B:$B,{treffer})={pg},"
+            f"INDEX({UMSCHL}!$C:$C,{treffer}),{auf}),{auf})")
 
 
 def _mapping_blatt(wb, mapping, produktgruppen):
@@ -171,7 +218,7 @@ def _mapping_blatt(wb, mapping, produktgruppen):
                 f"Mapping!$M${KOPF + 1}:$O${KOPF + n_umlage}")
 
 
-def _kptm_blatt(wb, df, mapping, bereiche):
+def _kptm_blatt(wb, df, mapping, bereiche, umschl=None):
     """Der KPTM-Export mit vier Hilfsspalten, die selbst Formeln sind.
 
     Dadurch ist die Zuordnung nicht das Ergebnis eines unsichtbaren Programmschritts,
@@ -251,6 +298,21 @@ def _kptm_blatt(wb, df, mapping, bereiche):
         z = ws.cell(row=r, column=basis + 4, value=f'={c_vz}{r}*{s_wert}{r}')
         z.number_format = "#,##0.00"
 
+    # Umstellungsjahr: Die Produktgruppe ist dort, wo eine Umschluesselung ueberhaupt
+    # moeglich ist, selbst eine Formel auf das Blatt 'Umschluesselung'. Daneben steht
+    # die gebuchte Gruppe als Wert. Nur diese Zeilen - die uebrigen bleiben Werte, das
+    # haelt die Mappe klein.
+    if umschl and "Produktgruppe (gebucht)" in spalten and "Artikelnummer" in spalten:
+        s_geb, s_art = spalten["Produktgruppe (gebucht)"], spalten["Artikelnummer"]
+        sp_pg = list(spalten).index("Produktgruppe") + 1
+        moeglich = umschl["alte"] | set(umschl["aufgeloest"])
+        for r, geb in zip(range(erste, letzte + 1), df["Produktgruppe (gebucht)"]):
+            if geb in moeglich:
+                z = ws.cell(row=r, column=sp_pg,
+                            value="=" + _neue_gruppe(f"{s_geb}{r}", f"{s_art}{r}"))
+                z.fill = FILL_HILFS
+        ws.column_dimensions[s_geb].width = 14
+
     ws.auto_filter.ref = f"A{kopf}:{c_betrag}{letzte}"
     for c in (c_zeile, c_vz, c_ziel, c_betrag):
         ws.column_dimensions[c].width = 19
@@ -307,7 +369,7 @@ def _zuordnung_blatt(wb, nach_auftrag, nach_artikel, manuelle_zuordnung=None):
         ws.column_dimensions[sp].width = br
 
 
-def _pwbs_blatt(wb, pfad, titel, hinweis):
+def _pwbs_blatt(wb, pfad, titel, hinweis, umschl=False):
     """Werkstattbestand, bei dem die Sparte per INDEX/VERGLEICH ermittelt wird.
 
     Die Zuordnung ist damit nicht das Ergebnis eines unsichtbaren Programmschritts,
@@ -318,6 +380,9 @@ def _pwbs_blatt(wb, pfad, titel, hinweis):
       2. Treffer ueber die Auftragsnummer im Blatt 'Zuordnung' (Tabelle links)
       3. sonst Treffer ueber die Artikelnummer im Blatt 'Zuordnung' (Tabelle rechts)
       4. sonst nicht zuordenbar
+    Liefert der Werkstattbestand selbst die Spalte 'Produktgruppe', geht sie allem vor
+    (ausser Punkt 1). Im Umstellungsjahr kommt eine zweite Spalte hinzu, die das
+    Ergebnis in die neue Produktgruppen-Struktur bringt.
     """
     roh = pd.read_excel(pfad, sheet_name="Penta")
     roh.columns = [str(c).strip() for c in roh.columns]
@@ -328,19 +393,32 @@ def _pwbs_blatt(wb, pfad, titel, hinweis):
     s_wert = spalten["Offener Wert"]
 
     kopf = erste - 1
-    c_sparte = get_column_letter(len(roh.columns) + 1)
-    z = ws.cell(row=kopf, column=len(roh.columns) + 1, value="Sparte (Formel)")
-    z.font = Font(bold=True)
-    z.fill = FILL_HILFS
+    s_pg = spalten.get("Produktgruppe")
+    titel_sp = (["Sparte (gebucht, Formel)", "Sparte (Formel)"] if umschl
+                else ["Sparte (Formel)"])
+    for k, t in enumerate(titel_sp):
+        z = ws.cell(row=kopf, column=len(roh.columns) + 1 + k, value=t)
+        z.font = Font(bold=True)
+        z.fill = FILL_HILFS
+    c_basis = get_column_letter(len(roh.columns) + 1)
+    c_sparte = get_column_letter(len(roh.columns) + len(titel_sp))
     for r in range(erste, letzte + 1):
-        ws.cell(row=r, column=len(roh.columns) + 1, value=(
-            f'=IF({s_art}{r}="","(Serviceauftrag)",'
-            f'IFERROR(INDEX(Zuordnung!$B:$B,'
-            f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung!$A:$A,0)),'
-            f'IFERROR(INDEX(Zuordnung!$F:$F,'
-            f'MATCH(TEXT({s_art}{r},"@"),Zuordnung!$E:$E,0)),'
-            f'"(nicht zuordenbar)")))'))
-    ws.column_dimensions[c_sparte].width = 20
+        kette = (f'IFERROR(INDEX(Zuordnung!$B:$B,'
+                 f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung!$A:$A,0)),'
+                 f'IFERROR(INDEX(Zuordnung!$F:$F,'
+                 f'MATCH(TEXT({s_art}{r},"@"),Zuordnung!$E:$E,0)),'
+                 f'"(nicht zuordenbar)"))')
+        if s_pg:
+            # GLAETTEN: das ERP liefert fuer manche Auftraege ein Leerzeichen statt
+            # einer leeren Zelle - das Programm wertet beides als "keine Angabe".
+            kette = f'IF(TRIM({s_pg}{r})<>"",TRIM({s_pg}{r}),{kette})'
+        ws.cell(row=r, column=len(roh.columns) + 1,
+                value=f'=IF({s_art}{r}="","(Serviceauftrag)",{kette})')
+        if umschl:
+            ws.cell(row=r, column=len(roh.columns) + 2,
+                    value="=" + _neue_gruppe(f"{c_basis}{r}", f"{s_art}{r}"))
+    for c in {c_basis, c_sparte}:
+        ws.column_dimensions[c].width = 20
     ws.auto_filter.ref = f"A{kopf}:{c_sparte}{letzte}"
     return {"blatt": titel, "erste": erste, "letzte": letzte,
             "sparte": c_sparte, "wert": s_wert}
@@ -368,15 +446,22 @@ def _kostentraeger_blatt(wb, umlage, zeilen_gesamt, mapping, umlage_bereich):
     bezieht; sie hier zu wiederholen, waere doppelt.
     """
     spalten = [c for c in ("Kostenobjekt", "KOSTENOBJEKT_BEZ", "Periode", "Kostenart",
-                           "KOSTENART_BEZ", "Wertart", "Wert/Menge") if c in umlage.columns]
+                           "KOSTENART_BEZ", "Wertart", "Wert/Menge", "Ziel", "Anteil")
+               if c in umlage.columns]
     df = umlage[spalten].copy()
     df["Kostenobjekt"] = df["Kostenobjekt"].astype(str)
+    if "Ziel" in df.columns:
+        df["Ziel"] = df["Ziel"].astype(str)
     ws, erste = _blatt_mit_daten(
         wb, "Daten_Kostentraeger", df,
         f"Aus der Kostentraeger-Auswertung der Buchhaltung ({zeilen_gesamt} Zeilen) die "
         f"{len(df)} Umlagezeilen der Deckungsdifferenzen ('Umlage DDIFF', Kostenart U + "
         f"Kostenstellennummer). Die gelben Spalten ordnen jede Zeile per Regel aus dem Blatt "
-        f"'Mapping' (Spalten M-O) einer der drei Deckungsdifferenz-Zeilen zu.")
+        f"'Mapping' (Spalten M-O) einer der drei Deckungsdifferenz-Zeilen zu. 'Ziel' ist die "
+        f"Sparte, auf die der Betrag geht - meist das Kostenobjekt selbst. Ist eine Zeile auf "
+        f"einer alten, inzwischen geteilten Produktgruppe gebucht, steht sie mehrfach da, je "
+        f"neuer Gruppe mit ihrem 'Anteil' (Naeherung, gelb hinterlegt; Schluessel: Bezugsbasis "
+        f"der Zeile in 'Daten_KPTM').")
     letzte = erste + len(df) - 1
     kopf = erste - 1
     s = {c: get_column_letter(i) for i, c in enumerate(spalten, start=1)}
@@ -392,18 +477,26 @@ def _kostentraeger_blatt(wb, umlage, zeilen_gesamt, mapping, umlage_bereich):
         ka = f"{s['Kostenart']}{r}"
         ws.cell(row=r, column=basis + 1,
                 value="=" + _umlage_nachschlag(ka, umlage_bereich, 2, laengen, '""'))
+        anteil = f"*{s['Anteil']}{r}" if "Anteil" in s else ""
         z = ws.cell(row=r, column=basis + 2, value=(
-            f"={s['Wert/Menge']}{r}*" + _umlage_nachschlag(ka, umlage_bereich, 3, laengen, "0")))
+            f"={s['Wert/Menge']}{r}*" + _umlage_nachschlag(ka, umlage_bereich, 3, laengen, "0")
+            + anteil))
         z.number_format = "#,##0.00"
-        ws.cell(row=r, column=len(spalten)).number_format = "#,##0.00"
+        ws.cell(row=r, column=spalten.index("Wert/Menge") + 1).number_format = "#,##0.00"
+        if "Anteil" in s:
+            za = ws.cell(row=r, column=spalten.index("Anteil") + 1)
+            za.number_format = "0.0000%"
+            if float(za.value or 0) < 0.9999:
+                za.fill = FILL_HILFS
+                ws.cell(row=r, column=spalten.index("Ziel") + 1).fill = FILL_HILFS
 
-    for sp, br in zip(spalten, (13, 26, 8, 12, 34, 8, 14)):
+    for sp, br in zip(spalten, (13, 26, 8, 12, 34, 8, 14, 10, 10)):
         ws.column_dimensions[s[sp]].width = br
     ws.column_dimensions[c_zeile].width = 24
     ws.column_dimensions[c_betrag].width = 14
     ws.auto_filter.ref = f"A{kopf}:{c_betrag}{letzte}"
     return {"blatt": "Daten_Kostentraeger", "erste": erste, "letzte": letzte,
-            "objekt": s["Kostenobjekt"], "zeile": c_zeile, "betrag": c_betrag}
+            "objekt": s.get("Ziel", s["Kostenobjekt"]), "zeile": c_zeile, "betrag": c_betrag}
 
 
 def _kontrollblatt(wb, result, produktgruppen):
@@ -429,14 +522,20 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
                           pwbs_ende=None, pwbs_anfang=None, nach_auftrag=None,
                           nach_artikel=None, anfangsbestand=None,
                           manuelle_zuordnung=None, ufe_berechnet=False,
-                          kostentraeger=None):
+                          kostentraeger=None, umschluesselung=None, aufgeloest=None,
+                          anfangsbestand_naeherung=None):
     """Haengt an eine bestehende Mappe die Datenblaetter an und ersetzt die Werte
     im Blatt 'Spartenrechnung' durch Formeln, die auf diese Blaetter zeigen.
 
     Gibt die Anzahl verformelter Zellen zurueck.
     """
     _, bereiche = _mapping_blatt(wb, mapping, produktgruppen)
-    kptm = _kptm_blatt(wb, kptm_df, mapping, bereiche)
+    umschl = None
+    if umschluesselung:
+        _umschluesselung_blatt(wb, umschluesselung, aufgeloest)
+        umschl = {"alte": {alt for alt, _ in umschluesselung.values()},
+                  "aufgeloest": aufgeloest or {}}
+    kptm = _kptm_blatt(wb, kptm_df, mapping, bereiche, umschl)
     kt = None
     if kostentraeger is not None:
         kt = _kostentraeger_blatt(wb, kostentraeger["umlage"], kostentraeger["zeilen_gesamt"],
@@ -453,12 +552,12 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "Werkstattbestand zum Stichtag. Massgeblich ist die Spalte 'Offener Wert'. "
             "Die gelbe Spalte rechts ermittelt die Sparte per INDEX/VERGLEICH - erst ueber "
             "die Auftragsnummer, ersatzweise ueber die Artikelnummer. Serviceauftraege "
-            "(ohne Artikelnummer) zaehlen bewusst nicht mit.")
+            "(ohne Artikelnummer) zaehlen bewusst nicht mit.", umschl=bool(umschl))
     if pwbs_anfang:
         pwbs_a = _pwbs_blatt(
             wb, pwbs_anfang, "Daten_PWBS_Anfang",
             "Werkstattbestand zum Periodenbeginn (01.01.), gleiche Systematik wie das "
-            "Blatt 'Daten_PWBS_Ende'.")
+            "Blatt 'Daten_PWBS_Ende'.", umschl=bool(umschl))
 
     # Die hinterlegten Zuschlagssaetze gehoeren mit ins Blatt: sie stehen in derselben
     # Parameterdatei wie die Anfangsbestaende und sind der Massstab, gegen den die aus
@@ -471,9 +570,13 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
 
     if anfangsbestand or saetze:
         # columns= mitgeben, damit auch ohne Anfangsbestaende die Kopfzeile entsteht.
-        df_b = pd.DataFrame([{"Sparte": p, "Anfangsbestand": v}
+        geteilt = set(anfangsbestand_naeherung or [])
+        df_b = pd.DataFrame([{"Sparte": p, "Anfangsbestand": v,
+                              "Herkunft": "aufgeteilt (Naeherung)" if p in geteilt else ""}
                              for p, v in sorted((anfangsbestand or {}).items())],
-                            columns=["Sparte", "Anfangsbestand"])
+                            columns=["Sparte", "Anfangsbestand", "Herkunft"])
+        if not geteilt:
+            df_b = df_b.drop(columns="Herkunft")
         ws, erste = _blatt_mit_daten(
             wb, "Betriebsparameter", df_b,
             "Hinterlegte Betriebsparameter. Links der Werkstattbestand je Sparte zum "
@@ -483,6 +586,8 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "Sollwert, gegen den die aus den Daten zurueckgerechneten Saetze pruefen.")
         ws.column_dimensions["A"].width = 12
         ws.column_dimensions["B"].width = 18
+        if geteilt:
+            ws.column_dimensions["C"].width = 22
         for r in range(erste, erste + len(df_b)):
             ws.cell(row=r, column=2).number_format = "#,##0.00"
 
@@ -532,11 +637,16 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             "    'Zuordnung'). Auftraege ohne Artikelnummer sind Serviceauftraege und zaehlen",
             "    nicht mit.",
             "",
-            "  Zeilen OHNE Formel - und warum:",
-            "    Die drei Deckungsdifferenzen  stammen aus dem BAB, nicht aus diesen Exporten.",
-            "                               Sie sind hier leer und von Hand zu ergaenzen.",
-            "    Sonderposten               bewusste Einzelfall-Entscheidung je Periode.",
-            "",
+            *(["  Die drei Deckungsdifferenzen summieren ueber 'Daten_Kostentraeger' (Umlagezeilen",
+               "  der Kostentraeger-Auswertung, Spalte 'Betrag' je 'Ziel').", ""] if kt else [
+               "  Zeilen OHNE Formel - und warum:",
+               "    Die drei Deckungsdifferenzen  stammen aus der Kostentraeger-Auswertung der",
+               "                               Buchhaltung, die hier nicht mitgegeben wurde.", ""]),
+            *(["  Neue Produktgruppen-Struktur: In 'Daten_KPTM' ist die Spalte 'Produktgruppe' dort,",
+               "  wo eine Umschluesselung moeglich ist, eine Formel auf das Blatt 'Umschluesselung';",
+               "  die gebuchte Gruppe steht daneben. Im Werkstattbestand bringt die Spalte",
+               "  'Sparte (Formel)' die Zuordnung auf dieselbe Weise in die neue Struktur.", ""]
+              if umschl else []),
             "  Selbstpruefung: Oben links im Blatt 'Spartenrechnung' steht die groesste "
             "Abweichung zwischen",
             "  dem, was die Formeln rechnen, und dem, was das Programm gerechnet hat. Dort "

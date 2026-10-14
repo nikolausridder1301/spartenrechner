@@ -13,7 +13,6 @@ let kptmFile = null;
 let kostentraegerFile = null;
 let pwbsAnfangFile = null;
 let pwbsEndeFile = null;
-let pfakFiles = [];
 
 function setupDropzone(zoneId, textId, inputId, onFile) {
   const zone = document.getElementById(zoneId);
@@ -57,27 +56,6 @@ setupDropzone("dropzone-pwbs-e", "dropzone-pwbs-e-text", "file-pwbs-e", (file, z
   text.textContent = "✓ " + file.name;
 });
 
-// PFAK erlaubt mehrere Dateien - deshalb eigener Handler statt setupDropzone
-(() => {
-  const zone = document.getElementById("dropzone-pfak");
-  const text = document.getElementById("dropzone-pfak-text");
-  const input = document.getElementById("file-pfak");
-  const uebernehmen = (files) => {
-    pfakFiles = Array.from(files);
-    zone.classList.add("has-file");
-    text.textContent = `✓ ${pfakFiles.length} Datei(en): ` + pfakFiles.map((f) => f.name).join(", ");
-  };
-  zone.addEventListener("click", () => input.click());
-  input.addEventListener("change", () => { if (input.files.length) uebernehmen(input.files); });
-  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("dragover"); });
-  zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
-  zone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    zone.classList.remove("dragover");
-    if (e.dataTransfer.files.length) uebernehmen(e.dataTransfer.files);
-  });
-})();
-
 /* Kurze Erklaerung je Feld ("?"-Symbol neben der Ueberschrift): woher die Datei
    kommt, was sie enthaelt und wozu sie gebraucht wird - fuer alle, die die
    ERP-Exportnamen nicht auswendig kennen. Ein einziges, wiederverwendetes
@@ -98,19 +76,13 @@ const INFO_TEXTE = {
     <strong>Warum</strong>Daraus kommen die FEK-, MGK- und VVGK-Deckungsdifferenz je Sparte &ndash;
     der Unterschied zwischen kalkulierten und tats&auml;chlichen Gemeinkosten. Ohne sie fehlen
     DB&nbsp;I bis DB&nbsp;III.`,
-  "pwbs-ende": `<strong>Woher</strong>ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;, Stichtag = letzter
-    Tag des Auswertungszeitraums.
+  "pwbs-ende": `<strong>Woher</strong>Von der Buchhaltung: ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;
+    in der Form <em>mit Spalte Produktgruppe</em>, gezogen <em>am</em> Stichtag (erster Tag nach
+    dem Auswertungszeitraum) &ndash; nicht nachtr&auml;glich, sonst stimmen die Werte nicht mehr.
     <strong>Was</strong>Alle Fertigungsauftr&auml;ge, die an diesem Stichtag noch nicht fertiggemeldet
-    sind, mit ihrem bisher aufgelaufenen Wert (unfertige Erzeugnisse).
+    sind, mit ihrem bisher aufgelaufenen Wert (unfertige Erzeugnisse) und ihrer Sparte.
     <strong>Warum</strong>Ohne diese Datei fehlt die Zeile &bdquo;Bestandsver&auml;nderung UFE&ldquo; &ndash;
     Betriebsleistung und Rohmarge w&auml;ren unvollst&auml;ndig.`,
-  "pfak": `<strong>Woher</strong>ERP-Export &bdquo;PFAK_Fertigungsauftragskopf&ldquo; &ndash; m&ouml;glichst
-    die neueste vorhandene Datei.
-    <strong>Was</strong>Stammdaten zu allen Fertigungsauftr&auml;gen, u.&nbsp;a. welcher Sparte
-    (Produktgruppe) jeder Auftrag zugeordnet ist.
-    <strong>Warum</strong>Ordnet die offenen Auftr&auml;ge aus dem Werkstattbestand einer Sparte zu.
-    Je neuer die Datei, desto mehr Auftr&auml;ge sind bereits fertiggemeldet und damit eindeutig
-    zuordenbar.`,
   "anfangsbestand": `<strong>Woher</strong>Entweder ein weiterer ERP-Export
     &bdquo;PWBS_Werkstattbestand&ldquo; mit Stichtag 01.01., oder &ndash; einfacher &ndash; eine schon
     einmal gesicherte Datei betriebsparameter.xlsx.
@@ -157,9 +129,18 @@ const INFO_TEXTE = {
     sagt erst der BAB.`,
   "wb_zugeordnet": `<strong>Was ist es</strong>Der Teil des Werkstattbestands, f&uuml;r den
     die Sparte feststeht. Nur diese Auftr&auml;ge gehen in die Bestandsver&auml;nderung UFE ein.
-    <strong>Berechnung</strong>Je offenem Auftrag wird die Sparte gesucht: zuerst eine
-    Zuordnung von Hand, dann &uuml;ber die Auftragsnummer (aus KPTM/PFAK), zuletzt &uuml;ber die
-    Artikelnummer. Summiert wird die Spalte &bdquo;Offener Wert&ldquo;.`,
+    <strong>Berechnung</strong>Die Sparte steht im Werkstattbestand selbst (Spalte
+    &bdquo;Produktgruppe&ldquo;). Fehlt sie bei einem Auftrag, wird gesucht: Zuordnung von Hand,
+    dann &uuml;ber die Auftragsnummer (aus KPTM), zuletzt &uuml;ber die Artikelnummer.
+    Summiert wird die Spalte &bdquo;Offener Wert&ldquo;.`,
+  "struktur": `<strong>Was ist es</strong>Seit der Reorganisation 2026 gelten neue
+    Produktgruppen (vor allem Pressbohrtechnik). Buchungen aus den ersten Monaten stehen noch
+    unter der alten Gruppe &ndash; sie werden je Artikel umgeschl&uuml;sselt, damit das ganze
+    Jahr in einer Struktur steht.
+    <strong>Berechnung</strong>Nachschlagen in der Liste &bdquo;Alte vs Neue Produktgruppen&ldquo;
+    (in den Betriebsparametern hinterlegt). Was nur je Gruppe und nicht je Artikel vorliegt
+    &ndash; Deckungsdifferenzen auf alten Gruppen, der Anfangsbestand der geteilten Gruppen &ndash;
+    wird anteilig verteilt; diese Zellen sind in der Datei gelb (N&auml;herung).`,
   "wb_service": `<strong>Was ist es</strong>Serviceauftr&auml;ge &ndash; Monteureinsatz,
     Inbetriebnahme, Schulung. Dabei wird nichts gefertigt, also geh&ouml;ren sie nicht in den
     Werkstattbestand.
@@ -388,12 +369,15 @@ async function init() {
     }
 
     // Kernmodul + Konfiguration laden (aus diesem Repository, nicht von einem fremden Server)
+    // "no-cache" heisst: beim Server nachfragen, ob sich die Datei geaendert hat. Sonst
+    // rechnet der Browser nach einer Aktualisierung noch mit dem alten Code oder der
+    // alten Konfiguration weiter - ohne dass es irgendwo sichtbar wuerde.
     for (const modul of ["spartenrechnung_core.py", "herleitung_excel.py"]) {
-      pyodide.FS.writeFile("/" + modul, await (await fetch(modul)).text());
+      pyodide.FS.writeFile("/" + modul, await (await fetch(modul, { cache: "no-cache" })).text());
     }
     pyodide.FS.mkdir("/config");
     for (const name of ["kostenart_mapping.json", "produktgruppen.json"]) {
-      const txt = await (await fetch("config/" + name)).text();
+      const txt = await (await fetch("config/" + name, { cache: "no-cache" })).text();
       pyodide.FS.writeFile("/config/" + name, txt);
     }
     // Betriebsparameter kommen nicht aus dem Repository, sondern aus dem Browser
@@ -431,10 +415,6 @@ form.addEventListener("submit", async (e) => {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
     return;
   }
-  if (!pfakFiles.length) {
-    showError("Bitte die PFAK-Daten auswählen (die aktuellste vorliegende Datei).");
-    return;
-  }
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Wird berechnet …";
@@ -454,13 +434,8 @@ form.addEventListener("submit", async (e) => {
     const extE = pwbsEndeFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
     pyodide.FS.writeFile("/pwbs_ende" + extE, new Uint8Array(await pwbsEndeFile.arrayBuffer()));
     const pwbsEArg = JSON.stringify("/pwbs_ende" + extE);
-    const pfakPfade = [];
-    for (let i = 0; i < pfakFiles.length; i++) {
-      const p = `/pfak_${i}.xlsx`;
-      pyodide.FS.writeFile(p, new Uint8Array(await pfakFiles[i].arrayBuffer()));
-      pfakPfade.push(p);
-    }
-    const pfakArg = pfakPfade.length ? JSON.stringify(pfakPfade) : "None";
+    // PFAK wird nicht mehr gebraucht: der Werkstattbestand bringt die Sparte selbst mit.
+    const pfakArg = "None";
     if (pwbsAnfangFile) {
       const extA = pwbsAnfangFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
       pyodide.FS.writeFile("/pwbs_anfang" + extA, new Uint8Array(await pwbsAnfangFile.arrayBuffer()));
@@ -544,6 +519,17 @@ function showResult(summary, url, filename) {
     const std = summary.unproduktive_stunden.toLocaleString("de-DE", {maximumFractionDigits: 0});
     html += summaryZeile(`Nicht auf Kostenträger gebuchte Stunden (${std} h)`,
       eurF(summary.unproduktive_gemeinkosten) + " €", "unproduktiv");
+  }
+
+  const st = summary.struktur;
+  if (st && st.fehlt) {
+    html += `<div class="warning-box">⚠️ Der Export enthält Buchungen auf aufgelösten
+      Produktgruppen (<strong>${st.alte.join(", ")}</strong>), es ist aber keine Umschlüsselung
+      hinterlegt – alte und neue Struktur stehen nebeneinander. Bitte die aktuelle
+      <strong>betriebsparameter.xlsx</strong> (mit Blatt „Umschluesselung") unten laden.</div>`;
+  } else if (st) {
+    html += summaryZeile("Neue Produktgruppen-Struktur: umgeschlüsselte Buchungen",
+      st.zeilen.toLocaleString("de-DE") + ` · ${summary.naeherung_zellen} Zellen Näherung`, "struktur");
   }
 
   const dd = summary.deckungsdifferenzen || {};
@@ -697,11 +683,15 @@ function showResult(summary, url, filename) {
     sichernBtn.addEventListener("click", async () => {
       // Geschaeftsjahr aus den Rohdaten (Spalte 'Geschaeftsjahr'), nicht aus Text geraten.
       const jahr = summary.jahr || new Date().getFullYear();
-      const werte = JSON.stringify({ [String(jahr)]: summary.ufe_statistik.bestand_stichtag });
+      // Fortschreiben statt neu anlegen: die uebrigen Jahre, die Zuschlagssaetze und
+      // die Umschluesselung bleiben erhalten - sonst fehlten sie beim naechsten Laden.
+      const bestand = JSON.stringify(summary.ufe_statistik.bestand_stichtag);
+      const bisher = parameterLesen() || "{}";
       await pyodide.runPythonAsync(`
 import json
-spartenrechnung_core.schreibe_betriebsparameter_excel(
-    json.loads(${JSON.stringify(werte)}), "/betriebsparameter_neu.xlsx")
+spartenrechnung_core.betriebsparameter_fortschreiben(
+    json.loads(${JSON.stringify(bisher)}), ${JSON.stringify(String(jahr))},
+    json.loads(${JSON.stringify(bestand)}), "/betriebsparameter_neu.xlsx")
       `);
       const bytes = pyodide.FS.readFile("/betriebsparameter_neu.xlsx");
       const url = URL.createObjectURL(new Blob([bytes],

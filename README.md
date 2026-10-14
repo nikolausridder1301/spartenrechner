@@ -8,7 +8,7 @@ Datei `KPTM_Wertsummen_*.xls`).
 
 **[→ Spartenrechner öffnen](https://nikolausridder1301.github.io/spartenrechner/)**
 
-Dateien per Drag & Drop hochladen (KPTM-Rohdaten, optional BWA),
+Dateien per Drag & Drop hochladen (KPTM-Rohdaten, Kostenträger-Auswertung, Werkstattbestand),
 "Spartenrechnung erstellen" klicken – fertige Excel-Datei zum
 Download. Genau wie ein klassischer Online-Dateikonverter, mit einem
 entscheidenden Unterschied: **es wird nichts hochgeladen.** Die komplette
@@ -53,10 +53,13 @@ widerlegten Hypothesen – steht in `intern/HERLEITUNG.md` (privates Repository)
 **Automatisch, zellgenau gegen die Referenzrechnung Q1 2026 geprüft** (grün):
 Erlöse, Bestandsveränderung FE, **Bestandsveränderung UFE**, Material,
 Fremdleistungen, sbA, FEK, MGK und overhead Kosten – und damit die komplette
-obere GuV bis einschließlich **Rohmarge I**. Von 266 vergleichbaren Zellen
-stimmen **239 auf den Cent**, 26 liegen im Rundungsbereich (Buchungsstand des
-KPTM-Exports), **eine** weicht ab – dort widerspricht die Referenz ihrer eigenen
-Folgezeile. Zusätzlich erzeugt das Tool das Blatt
+obere GuV bis einschließlich **Rohmarge I**. In der alten Produktgruppen-Struktur
+(wie die Referenz) stimmen von 266 vergleichbaren Zellen **239 auf den Cent**, 26
+liegen im Rundungsbereich (Buchungsstand des KPTM-Exports), **eine** weicht ab –
+dort widerspricht die Referenz ihrer eigenen Folgezeile. In der neuen Struktur
+(siehe unten) sind Drill Pipes und Injektionstechnik weiter je Sparte vergleichbar,
+die reorganisierten PB-Gruppen als Summe: 179 exakt, 20 nah, dieselbe eine
+Abweichung. Zusätzlich erzeugt das Tool das Blatt
 **Fertigungsstunden** – die bisher separat manuell gepflegte Auswertung der
 Fertigungsaufträge je Kostenstelle (70 von 70 Zellen centgenau).
 
@@ -85,7 +88,8 @@ jeder echten Sparte 0,00; die Beträge stehen nur auf Kostenobjekten ohne Sparte
 Die genaue Konten-Zuordnung steht in `config/kostenart_mapping.json` und
 `config/produktgruppen.json` und kann dort angepasst werden – z.B. wenn durch die
 laufende Produktgruppen-Reorganisation neue Codes hinzukommen. Ob die
-Automatisierung nach einer Änderung noch stimmt, prüft:
+Automatisierung nach einer Änderung noch stimmt, prüft (mit `--alte-struktur` ohne
+Umschlüsselung, also je Sparte wie die Referenz):
 
 ```bash
 python scripts/validate.py --rohdaten rohdaten/2026/Q1 --referenz "referenz/01-03 2026-Spartenrechnung Perforator.xlsx" --referenz-sheet "Spartenrechnung Jan-März 2026"
@@ -93,42 +97,31 @@ python scripts/validate.py --rohdaten rohdaten/2026/Q1 --referenz "referenz/01-0
 
 ## Arbeitsweise beim monatlichen Abschluss
 
-Eine Besonderheit, die man einmal verstanden haben muss, betrifft die Zeile
-**Bestandsveränderung UFE**. Sie beruht darauf, dass jeder offene
-Fertigungsauftrag einer Sparte zugeordnet werden kann – und genau das ist beim
-*laufenden* Abschluss nur teilweise möglich.
+Hochzuladen sind drei Dateien plus – einmal im Jahr – der Anfangsbestand:
 
-Der Grund: Ein PFAK-Export besteht praktisch vollständig aus **fertiggemeldeten**
-Aufträgen (Jan–März 2026: 1.376 von 1.542 „Erledigt", 13 „Teilfertig"). Ein
-Auftrag, der am Stichtag noch läuft, ist per Definition nicht erledigt – genau
-deshalb steht er ja im Werkstattbestand. Von den 508 laufenden Aufträgen am
-01.04.2026 findet der März-Export nur **14**, der Juli-Export dagegen **476**.
+| Datei | Woher |
+|---|---|
+| `KPTM_Wertsummen_*.xls` | SQL-Abfrage ans ERP, kumuliert seit Jahresbeginn |
+| Kostenträger-Auswertung | Buchhaltung, nach dem Monatsabschluss gezogen |
+| `PWBS_Werkstattbestand_*.xls` **mit Spalte Produktgruppe** | Buchhaltung, **am Stichtag** gezogen |
 
-| Datenlage | Lücke | Sparten korrekt |
-|---|---|---|
-| laufender Abschluss (PFAK Jan–März) | 4,7 % – 239 Aufträge, 58.156 € | 7 von 13, bis 27.957 € daneben |
-| nachträglich (PFAK Jan–Juli) | 0,1 % – 10 Aufträge, 1.445 € | **13 von 13 centgenau** |
+### Werkstattbestand: mit Produktgruppe, am Stichtag
 
-Das Tool blockiert die Zeile oberhalb von **1 %** bewusst, statt eine ungenaue
-Zahl auszugeben. Der spätere Export ändert dabei nichts am *Wert* des Bestands –
-der kommt unverändert aus der PWBS. Er sagt nur, *wozu* die Aufträge gehören.
+Die Zeile **Bestandsveränderung UFE** braucht für jeden offenen Fertigungsauftrag
+seine Sparte. Seit Oktober 2026 liefert die Buchhaltung den Werkstattbestand mit
+der Spalte „Produktgruppe" – damit ist jeder Auftrag direkt zugeordnet, der frühere
+Umweg über den PFAK-Export entfällt.
 
-**Empfohlenes Vorgehen:**
+Wichtig ist der **Zeitpunkt**: Der Werkstattbestand muss am Stichtag gezogen werden
+(für September also am 01.10.), nicht Wochen später. Ein nachträglich gezogener
+Export zeigt die Aufträge mit ihrem *heutigen* Stand – geprüft an einem rückwirkend
+gezogenen Bestand zum 01.01.2026, der deutlich vom Bilanzwert abweicht, während der
+am Stichtag gezogene centgenau passt.
 
-1. **PFAK: immer die neueste Datei hochladen**, die vorliegt – eine genügt. Je
-   aktueller der Export, desto mehr Aufträge sind darin fertiggemeldet und damit
-   zuordenbar. Mit dem Juli-Export ist die UFE-Zeile für Q1 in allen 13 Sparten
-   centgenau.
-2. **Bleibt eine Lücke:** Die Oberfläche zeigt nach der Berechnung, wie viel des
-   Werkstattbestands zugeordnet werden konnte, und listet die offenen Aufträge
-   **nach Wert sortiert** mit je einem Sparten-Dropdown. Für Q1 reicht eine Runde
-   mit den 60 größten, um von 4,71 % auf 0,76 % zu kommen – die restlichen 179
-   sind Kleinvieh. Die Zuordnungen bleiben über mehrere Runden erhalten.
-3. **Oder abwarten:** denselben Zeitraum ein bis zwei Monate später erneut
-   rechnen. So ist die Referenzrechnung Q1 2026 entstanden.
-
-Dauerhaft löst das eine zusätzliche Spalte im PWBS-Export (siehe unten) – dann
-entfällt die Handarbeit vollständig.
+Ältere Exporte ohne Produktgruppen-Spalte funktionieren weiter über die
+Kommandozeile mit `--pfak` (neuester PFAK-Export). Ohne beides blockiert das Tool
+die UFE-Zeile, statt eine ungenaue Zahl auszugeben (Schwelle: 1 % nicht
+zuordenbarer Bestand).
 
 ### Der Anfangsbestand: einmal im Jahr, aus dem ERP
 
@@ -139,28 +132,37 @@ weil alle am 01.01. *beginnen*. Er ist als Jahreskonstante hinterlegt.
 Von Hand pflegen muss man ihn trotzdem nicht:
 
 1. Beim **Abschluss des Januars** brauchen Sie ohnehin den Bestand zum 01.01. –
-   laden Sie den PWBS-Export mit diesem Stichtag im Feld „Periodenbeginn" hoch.
-   Es ist derselbe Report wie der monatliche, nur mit anderem Datum.
+   laden Sie den PWBS-Export mit diesem Stichtag im Feld „Anfangsbestand" hoch.
 2. Das Tool zeigt danach unter **„Werkstattbestand als Betriebsparameter sichern"**
-   den errechneten Bestand als fertige **Excel-Tabelle** an (Spalten: Sparte,
-   Geschäftsjahr, Anfangsbestand). Einmal speichern – damit sind die restlichen elf
-   Monate versorgt, ohne die Datei jedes Mal mitzuladen.
+   den errechneten Bestand als fertige **Excel-Tabelle** an. Einmal speichern –
+   die übrigen Inhalte der Datei (andere Jahre, Zuschlagssätze, Umschlüsselung)
+   bleiben dabei erhalten.
 
 Geprüft: Der so ausgegebene Bestand ist als Anfangsbestand der Folgeperiode
 centgenau verwendbar (`UFE(Jan–Jun) = UFE(Q1) + [Bestand(01.07.) − Bestand(01.04.)]`,
 Abweichung 0,00 € über alle 14 Sparten).
 
-## Was beim Controlling angefragt werden müsste
+## Produktgruppen-Reorganisation 2026
 
-Die Deckungsdifferenzen sind mit der Kostenträger-Auswertung gelöst. Offen ist
-noch ein Punkt:
+Seit Periode 4/2026 bucht das ERP auf neue Produktgruppen (Pressbohrtechnik:
+PB0001 geteilt, PB0003 „Pilot Tubes" in PB0002 aufgegangen, neu PB0006–PB0008).
+Ein kumulierter Export des Jahres mischt also beide Strukturen. Das Tool rechnet
+**2026 durchgängig in der neuen Struktur**:
 
-1. **`PWBS_Werkstattbestand` mit einer Produktgruppen-Spalte.** Der kleinste
-   Aufwand der drei und sofort spürbar: eine zusätzliche Spalte in einer
-   bestehenden Abfrage, kein neuer Report. Die Produktgruppe hängt im ERP am
-   Fertigungsauftrag, sie kommt im Export nur nicht mit. Damit entfällt die
-   Hilfskonstruktion aus PFAK, KPTM-Kostenobjekt und Handzuordnung – beim
-   Q1-Abschluss 239 Aufträge, die sonst nachgetragen werden müssen.
+- **Buchungen** werden je Artikel umgeschlüsselt – nur, wenn sie auf der *alten*
+  Gruppe ihres Artikels stehen. Grundlage ist die Liste „Alte vs Neue
+  Produktgruppen", hinterlegt als Blatt `Umschluesselung` in den
+  Betriebsparametern (einmalig erzeugt mit `scripts/umstellung_neue_struktur.py`).
+  Die Zeilensummen bleiben dabei exakt erhalten. In der Ausgabe ist die
+  Produktgruppe dort eine Formel, die gebuchte Gruppe steht daneben.
+- **Näherung (gelb)** ist, was nur je Gruppe und nicht je Artikel vorliegt:
+  Deckungsdifferenzen, die noch auf einer alten, geteilten Gruppe gebucht sind
+  (verteilt nach ihrer Bezugsbasis), und der Anfangsbestand 2026 der geteilten
+  Gruppen (verteilt nach dem Werkstattbestand zum 01.01. je Auftrag). Über die
+  betroffenen Sparten zusammen sind die Werte exakt.
+- Drill Pipes und Injektionstechnik sind nicht betroffen.
+- Ab welchem Jahr umgeschlüsselt wird, steht in `config/produktgruppen.json`
+  (`umstellung_ab_jahr`); frühere Jahre bleiben in ihrer gebuchten Struktur.
 
 ## BWA-Datei: hilft nur als Kontroll-Check, nicht zur Sparten-Automatisierung
 
@@ -202,11 +204,12 @@ docs/                            Weboberfläche (GitHub Pages) – Kernlogik + U
   config/                          Kopie der Mapping-Tabellen für den Browser
 scripts/spartenrechnung.py       CLI-Wrapper um dieselbe Kernlogik
 scripts/validate.py              zellgenauer Abgleich gegen eine manuelle Referenz
+scripts/umstellung_neue_struktur.py  einmalig: Betriebsparameter auf neue Produktgruppen
 config/                          Mapping-Tabellen (Kostenart→Zeile, Produktgruppen)
 
 intern/                          ← eigenes, PRIVATES Repository (nicht hier drin)
   HERLEITUNG.md                    Herleitung jeder Zeile inkl. Belegen
-  betriebsparameter.xlsx           Anfangsbestände je Sparte (echte Werte)
+  betriebsparameter.xlsx           Anfangsbestände, Zuschlagssätze, Umschlüsselung
 rohdaten/ referenz/ output/      lokal, nicht versioniert
 ```
 
@@ -238,7 +241,7 @@ werden einmalig im Browser hinterlegt und dort gespeichert (`localStorage`), auf
 dem Rechner des Nutzers. Die Kommandozeile liest sie aus `intern/`.
 
 Wer nur die Weboberfläche benutzt, braucht das private Repository nicht – nur die
-ausgefüllte `betriebsparameter.json`.
+ausgefüllte `betriebsparameter.xlsx`.
 
 ## GitHub Pages aktivieren / aktualisieren
 

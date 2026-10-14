@@ -98,6 +98,14 @@ def main():
         print(f"HINWEIS (Bestandsveraenderung UFE): {h}", file=sys.stderr)
     for w in summary.get("ufe_warnungen", []):
         print(f"WARNUNG (Bestandsveraenderung UFE nicht berechnet): {w}", file=sys.stderr)
+    st = summary.get("struktur") or {}
+    if st.get("fehlt"):
+        print(f"WARNUNG: Buchungen auf aufgeloesten Produktgruppen ({', '.join(st['alte'])}), aber "
+              f"keine Umschluesselung hinterlegt - alte und neue Struktur stehen nebeneinander.",
+              file=sys.stderr)
+    elif st:
+        print(f"Neue Produktgruppen-Struktur: {st['zeilen']} Buchungszeilen umgeschluesselt, "
+              f"{summary.get('naeherung_zellen', 0)} Zellen als Naeherung (gelb).")
     dd = summary.get("deckungsdifferenzen") or {}
     if dd.get("geladen"):
         print("Deckungsdifferenzen aus der Kostentraeger-Auswertung uebernommen.")

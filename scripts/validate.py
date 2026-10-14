@@ -59,6 +59,23 @@ PSEUDO_KOSTENOBJEKTE = {"712000", "721000", "910000", "920000", "999999"}
 
 TOLERANZ_EXAKT = 0.005
 
+# Von der Produktgruppen-Reorganisation 2026 betroffen: nur die Pressbohrtechnik-
+# Gruppen (ohne das Fracht-Kostenobjekt PB0100, das bleibt). Die Referenz ist in der
+# alten Struktur gerechnet - in der neuen ist deshalb nur ihre SUMME vergleichbar.
+def ist_reorganisiert(code):
+    return code.startswith("PB") and code != "PB0100"
+
+
+FAMILIE = "PB (reorg.)"
+
+
+def zusammenfassen(werte_je_pg):
+    aus = {}
+    for pg, w in werte_je_pg.items():
+        k = FAMILIE if ist_reorganisiert(pg) else pg
+        aus[k] = aus.get(k, 0.0) + float(w or 0.0)
+    return aus
+
 
 def lade_referenz(pfad, sheet):
     wb = openpyxl.load_workbook(pfad, data_only=True)
@@ -88,6 +105,9 @@ def main():
     ap.add_argument("--pfak", nargs="*", help="Optional: PFAK-Dateien zur Sparten-Zuordnung")
     ap.add_argument("--kostentraeger", help="Optional: Kostentraeger-Auswertung (Deckungsdifferenzen). "
                     "Ohne Angabe wird im Rohdaten-Ordner gesucht.")
+    ap.add_argument("--alte-struktur", action="store_true",
+                    help="Ohne Umschluesselung rechnen (wie gebucht). Dann ist auch PB je "
+                         "Sparte vergleichbar - die Referenz ist in der alten Struktur gerechnet.")
     args = ap.parse_args()
 
     mapping, pg_config = core.load_config(CONFIG_DIR)
@@ -95,19 +115,34 @@ def main():
     satz = core.ermittle_stundensatz(df, mapping)
     if satz:
         mapping["standard_stundensatz"] = satz
+
+    # Gleiche Reihenfolge wie generate(): erst umschluesseln, dann rechnen.
+    params = core.lade_betriebsparameter(CONFIG_DIR)
+    jahr = core.geschaeftsjahr(df, args.zeitraum or args.referenz_sheet)
+    karte = {} if args.alte_struktur else (params.get("umschluesselung") or {})
+    aufgeloest = pg_config.get("aufgeloest", {}) if karte else {}
+    if karte:
+        df, bef = core.umschluesseln(df, karte, aufgeloest)
+        print(f"Neue Struktur: {bef['zeilen']} Buchungszeilen umgeschluesselt. PB-Gruppen werden "
+              f"als Summe '{FAMILIE}' verglichen.\n")
     result, produktgruppen, _, _, _ = core.build_spartenrechnung(df, mapping, pg_config)
 
     kt_pfad = args.kostentraeger or find_kostentraeger_file(args.rohdaten)
     if kt_pfad:
-        result, dd = core.deckungsdifferenzen_einsetzen(result, kt_pfad, mapping, df)
+        result, dd = core.deckungsdifferenzen_einsetzen(
+            result, kt_pfad, mapping, df,
+            anteile=core.aufteilungsanteile(df, mapping) if karte else None)
         for h in dd.get("hinweise", []):
             print(f"HINWEIS: {h}", file=sys.stderr)
 
     if args.pwbs_ende:
-        jahr = core.geschaeftsjahr(df, args.zeitraum or args.referenz_sheet)
+        ab = core.lade_anfangsbestand(CONFIG_DIR, jahr)
+        if args.alte_struktur:
+            print("HINWEIS: --alte-struktur mit einem Anfangsbestand in neuer Struktur - die "
+                  "UFE-Zeile der PB-Gruppen ist dann nicht vergleichbar.\n", file=sys.stderr)
         ufe, warnungen, _stat = core.bestandsveraenderung_ufe(
-            args.pwbs_ende, args.pfak, anfangsbestand=core.lade_anfangsbestand(CONFIG_DIR, jahr),
-            jahr=jahr, kptm_df=df)
+            args.pwbs_ende, args.pfak, anfangsbestand=ab,
+            jahr=jahr, kptm_df=df, karte=karte, aufgeloest=aufgeloest)
         for w in warnungen:
             print(f"HINWEIS: {w}\n", file=sys.stderr)
         if ufe:
@@ -117,6 +152,15 @@ def main():
             result = core.neu_berechnen(result)
 
     referenz = lade_referenz(args.referenz, args.referenz_sheet)
+    if karte:
+        referenz = {k: zusammenfassen(v) for k, v in referenz.items()}
+        ist_je_zeile = {k: zusammenfassen({pg: result.loc[k, pg] for pg in produktgruppen})
+                        for k in REFERENZ_ZEILEN if k in result.index}
+        produktgruppen = list(dict.fromkeys(
+            FAMILIE if ist_reorganisiert(pg) else pg for pg in produktgruppen))
+    else:
+        ist_je_zeile = {k: {pg: result.loc[k, pg] for pg in produktgruppen}
+                        for k in REFERENZ_ZEILEN if k in result.index}
 
     labels = mapping["zeilen_labels"]
     print(f"{'Zeile':42s} {'exakt':>6s} {'nah':>5s} {'ab':>4s} {'max Δ':>12s}  {'Summe Δ':>13s}")
@@ -135,7 +179,7 @@ def main():
         abweichungen = []
         for pg in produktgruppen:
             soll = float(soll_map.get(pg, 0.0) or 0.0)
-            ist = float(result.loc[key, pg])
+            ist = float(ist_je_zeile[key].get(pg, 0.0))
             soll_summe += soll
             ist_summe += ist
             if abs(soll) < TOLERANZ_EXAKT and abs(ist) < TOLERANZ_EXAKT:

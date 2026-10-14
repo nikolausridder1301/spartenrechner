@@ -193,10 +193,215 @@ def betriebsparameter_aus_excel(pfad):
         if sp_jahr is not None and not pd.isna(zeile[sp_jahr]):
             jahr = str(int(zeile[sp_jahr]))
         anfangsbestand.setdefault(jahr, {})[sparte] = round(wert, 2)
-    return {"anfangsbestand": anfangsbestand, "parameter": parameter}
+    # Optional: Spalte 'Herkunft' - welche Anfangsbestaende bei der Umstellung auf die
+    # neue Produktgruppen-Struktur nur anteilig aufgeteilt wurden. Deren UFE-Zellen
+    # zeigt die Spartenrechnung gelb (Naeherung).
+    naeherung = {}
+    sp_herkunft = _spalte_finden(roh.columns, {"herkunft"})
+    if sp_herkunft is not None:
+        for _, zeile in roh.iterrows():
+            text = str(zeile[sp_herkunft]).lower()
+            sparte = _schluessel(zeile[sp_sparte])
+            if sparte and ("aufgeteilt" in text or "naeherung" in text or "näherung" in text):
+                jahr = (str(int(zeile[sp_jahr])) if sp_jahr is not None
+                        and not pd.isna(zeile[sp_jahr]) else "alle")
+                naeherung.setdefault(jahr, []).append(sparte)
+    return {"anfangsbestand": anfangsbestand, "parameter": parameter,
+            "umschluesselung": umschluesselung_aus_excel(pfad),
+            "anfangsbestand_naeherung": naeherung}
 
 
-def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path, parameter=None):
+def umschluesselung_aus_excel(pfad):
+    """Liest das optionale Blatt 'Umschluesselung' der Betriebsparameter.
+
+    Spalten: Artikel | alte Produktgruppe | neue Produktgruppe. Grundlage ist die
+    Produktgruppen-Reorganisation 2026 (Datei 'Alte vs Neue Produktgruppen
+    Horizontalbohrtechnik'). Gespeichert werden nur Artikel, deren Gruppe sich
+    aendert. Liefert {artikel: [alt, neu]} oder {}, wenn das Blatt fehlt.
+    """
+    try:
+        blaetter = pd.ExcelFile(pfad).sheet_names
+    except Exception:
+        return {}
+    blatt = next((b for b in blaetter if "umschl" in b.lower()), None)
+    if blatt is None:
+        return {}
+    for kopfzeile in range(0, 10):
+        df = pd.read_excel(pfad, sheet_name=blatt, header=kopfzeile)
+        df.columns = [str(c).strip() for c in df.columns]
+        sp_art = _spalte_finden(df.columns, {"artikel", "artikelnummer", "artikel_nr", "artikelnr"})
+        sp_alt = _spalte_finden(df.columns, {"alteproduktgruppe", "alt", "produktgruppealt"})
+        sp_neu = _spalte_finden(df.columns, {"neueproduktgruppe", "neu", "produktgruppeneu"})
+        if sp_art is not None and sp_alt is not None and sp_neu is not None:
+            break
+    else:
+        raise ValueError(
+            f"Das Blatt '{blatt}' braucht die Spalten 'Artikel', 'alte Produktgruppe' und "
+            f"'neue Produktgruppe'.")
+    karte = {}
+    for art, alt, neu in zip(df[sp_art], df[sp_alt], df[sp_neu]):
+        a, alt_, neu_ = _schluessel(art), _schluessel(alt), _schluessel(neu)
+        if a and alt_ and neu_ and alt_ != neu_:
+            karte[a] = [alt_, neu_]
+    return karte
+
+
+def umschluesseln(df, karte, aufgeloest=None):
+    """Bringt Buchungen aus der alten Produktgruppen-Struktur in die neue.
+
+    Seit April 2026 bucht das ERP auf die neuen Produktgruppen; aeltere Auftraege laufen
+    aber unter ihrer alten Gruppe weiter. Ein kumulierter Export des Jahres mischt also
+    beide Strukturen - dieselbe Produktlinie stuende in zwei Spalten. Umgeschluesselt
+    wird je Buchung ueber den Artikel, und nur, wenn die gebuchte Gruppe die alte Gruppe
+    dieses Artikels ist (sonst ist die Buchung schon neu, oder der Artikel wurde nie
+    umgeschluesselt). Buchungen ohne Artikel bleiben in ihrer Gruppe - ausser die
+    Gruppe ist aufgeloest (z.B. PB0003 Pilot Tubes), dann geht sie an den Nachfolger.
+
+    Gemessen an Q1 2026: 93,7 % des Betrags auf PB0001-PB0005 artikelgenau.
+    Die gebuchte Gruppe bleibt in der Spalte 'Produktgruppe (gebucht)' erhalten.
+    """
+    df = df.copy()
+    alt = df["Produktgruppe"].copy()
+    # Direkt neben die Produktgruppe, damit im Datenblatt beide nebeneinander stehen.
+    df.insert(list(df.columns).index("Produktgruppe") + 1, "Produktgruppe (gebucht)", alt)
+    neu = alt.copy()
+    if "Artikelnummer" in df.columns:
+        ziel = df["Artikelnummer"].map(_schluessel).map(karte.get)
+        passt = ziel.notna() & (ziel.map(lambda z: z[0] if z else None) == alt)
+        neu[passt] = ziel[passt].map(lambda z: z[1])
+    for weg, nachfolger in (aufgeloest or {}).items():
+        neu[neu == weg] = nachfolger
+    geaendert = neu.fillna("") != alt.fillna("")
+    df["Produktgruppe"] = neu
+    return df, {
+        "zeilen": int(geaendert.sum()),
+        "betrag": round(float(df.loc[geaendert, "Wert/Menge"].abs().sum()), 2),
+        "paare": {f"{a}->{n}": int(c) for (a, n), c in
+                  pd.DataFrame({"a": alt[geaendert], "n": neu[geaendert]})
+                  .value_counts().items()},
+    }
+
+
+def _centgenau_verteilen(betrag, anteile):
+    """Verteilt einen Betrag nach Anteilen, so dass die gerundeten Teile exakt wieder
+    den Betrag ergeben (der Rundungsrest geht an den groessten Teil)."""
+    teile = {k: round(betrag * a, 2) for k, a in anteile.items()}
+    rest = round(betrag - sum(teile.values()), 2)
+    if teile and abs(rest) > 0:
+        groesster = max(teile, key=lambda k: abs(teile[k]))
+        teile[groesster] = round(teile[groesster] + rest, 2)
+    return teile
+
+
+def anfangsbestand_umschluesseln(anfangsbestand, pwbs_pfad, karte, aufgeloest=None):
+    """Teilt einen Anfangsbestand der alten Struktur auf die neuen Gruppen auf.
+
+    Einmalig fuer das Umstellungsjahr: Der Anfangsbestand liegt nur je ALTER Gruppe vor
+    (er ist gegen die Referenzrechnung geprueft), die neue Struktur braucht ihn je NEUER
+    Gruppe. Schluessel ist der Werkstattbestand zum selben Stichtag je Auftrag: Fuer jede
+    alte Gruppe der Anteil des offenen Werts, der auf jede neue Gruppe entfaellt.
+
+    Die Summe je alter Gruppe bleibt centgenau erhalten - es wird nur verteilt. Die
+    Verteilung selbst ist eine Naeherung: Der verfuegbare Werkstattbestand zum 01.01.26
+    wurde erst im Oktober nachtraeglich gezogen, seine Werte stimmen nicht mit dem
+    Bilanzwert ueberein (siehe HERLEITUNG). Fuer die ANTEILE innerhalb einer Gruppe ist
+    er trotzdem die beste verfuegbare Quelle.
+
+    Liefert (neuer_anfangsbestand, anteile je alter Gruppe, naeherung) - naeherung sind
+    die neuen Gruppen, die einen ANTEIL (< 100 %) einer alten Gruppe erhalten haben.
+    """
+    df = pd.read_excel(pwbs_pfad, sheet_name="Penta")
+    df.columns = [str(c).strip() for c in df.columns]
+    art = df["Artikelnummer"].map(_schluessel)
+    spalte = df["Produktgruppe"].map(_schluessel)
+    # Fuer Artikel der Umschluesselung gelten alt UND neu aus der Liste - genau wie bei
+    # den Buchungen. Nur so landen Anfangsbestand und Buchungen in derselben Gruppe.
+    alt = [karte[a][0] if a in karte else s for a, s in zip(art, spalte)]
+    neu = [karte[a][1] if a in karte else s for a, s in zip(art, spalte)]
+    neu = [(aufgeloest or {}).get(n, n) for n in neu]
+    tmp = pd.DataFrame({"art": art, "alt": alt, "neu": neu, "wert": df["Offener Wert"]})
+    tmp = tmp[tmp["art"].notna() & tmp["neu"].notna()]    # ohne Serviceauftraege
+
+    anteile = {}
+    for alt_pg, gruppe in tmp.groupby("alt"):
+        summe = gruppe.groupby("neu")["wert"].sum()
+        gesamt = float(summe.sum())
+        if abs(gesamt) > 0.005:
+            anteile[alt_pg] = {n: float(v) / gesamt for n, v in summe.items() if abs(v) > 0.005}
+
+    neu_ab, naeherung = {}, set()
+    # Neue Gruppen, die aus einer alten hervorgehen, am 01.01. aber keinen offenen
+    # Auftrag hatten, bekommen ausdruecklich 0,00 - sonst meldet die UFE-Zeile sie als
+    # "Anfangsbestand fehlt", obwohl er gemessen null ist.
+    for alt_pg, ziel in karte.values():
+        ziel = (aufgeloest or {}).get(ziel, ziel)
+        if abs(float(anfangsbestand.get(alt_pg, 0.0))) > 0.005:
+            neu_ab.setdefault(ziel, 0.0)
+            naeherung.add(ziel)
+    for alt_pg, betrag in anfangsbestand.items():
+        verteilung = anteile.get(alt_pg) or {(aufgeloest or {}).get(alt_pg, alt_pg): 1.0}
+        for ziel, teil in _centgenau_verteilen(float(betrag), verteilung).items():
+            neu_ab[ziel] = round(neu_ab.get(ziel, 0.0) + teil, 2)
+            if verteilung.get(ziel, 0) < 0.9999 and abs(betrag) > 0.005:
+                naeherung.add(ziel)
+    return neu_ab, anteile, naeherung
+
+
+def aufteilungsanteile(df, mapping):
+    """Wie verteilt sich jede GEBUCHTE Produktgruppe auf die neuen Gruppen?
+
+    Gebraucht fuer Groessen, die nur je Produktgruppe vorliegen und keinen Artikel
+    tragen - vor allem die Deckungsdifferenzen der Kostentraeger-Auswertung, die auf
+    der alten Gruppe gebucht sind. Sie werden im Verhaeltnis ihrer Bezugsbasis
+    aufgeteilt: FEK-Differenz nach FEK, MGK-Differenz nach Material + Fremdleistungen,
+    VVGK-Differenz nach Herstellkosten. Das ist eine NAEHERUNG - exakt waere es nur,
+    wenn die Buchhaltung die Differenzen schon in der neuen Struktur gebucht haette.
+    Gruppen, die vollstaendig in EINE neue uebergehen (z.B. PB0003 -> PB0002), sind
+    dagegen exakt.
+
+    Liefert {dd_zeile: {alte_pg: {neue_pg: anteil}}}, nur fuer tatsaechlich geteilte
+    oder umbenannte Gruppen.
+    """
+    if "Produktgruppe (gebucht)" not in df.columns:
+        return {}
+    kz = mapping["kostenart_zu_zeile"]
+    praefix = mapping["kostenstellen_praefix"]
+    kst_wertart = mapping.get("kostenstellen_wertart", "ISWF")
+
+    def zeile(ka, wertart):
+        ka = str(ka)
+        if ka.startswith(praefix):
+            return ("fek", 1) if wertart == kst_wertart else (None, 0)
+        r = kz.get(ka)
+        return (r["zeile"], r["sign"]) if r else (None, 0)
+
+    zz = [zeile(k, w) for k, w in zip(df["Kostenart"], df["Wertart"])]
+    tmp = pd.DataFrame({
+        "alt": df["Produktgruppe (gebucht)"].values, "neu": df["Produktgruppe"].values,
+        "zeile": [z[0] for z in zz],
+        "w": df["Wert/Menge"].values * [z[1] for z in zz],
+    }).dropna(subset=["alt", "neu", "zeile"])
+    basen = {
+        "fek_deckungsdifferenz": ["fek"],
+        "mgk_deckungsdifferenz": ["material", "fremdleistungen"],
+        "vvgk_deckungsdifferenz": ["material", "fremdleistungen", "mgk", "fek"],
+    }
+    anteile = {}
+    for dd, zeilen in basen.items():
+        summe = tmp[tmp["zeile"].isin(zeilen)].groupby(["alt", "neu"])["w"].sum()
+        for alt_pg, gruppe in summe.groupby(level=0):
+            ziele = {n: float(v) for (_, n), v in gruppe.items() if abs(v) > 0.005}
+            if set(ziele) <= {alt_pg}:
+                continue                      # nichts umgeschluesselt
+            gesamt = sum(ziele.values())
+            if abs(gesamt) < 0.01:
+                continue
+            anteile.setdefault(dd, {})[alt_pg] = {n: v / gesamt for n, v in ziele.items()}
+    return anteile
+
+
+def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path, parameter=None,
+                                     umschluesselung=None, naeherung=None):
     """Schreibt die Betriebsparameter als Excel-Datei - dasselbe Format, das
     betriebsparameter_aus_excel wieder einliest."""
     wb = Workbook()
@@ -204,7 +409,7 @@ def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path, parameter
     ws.title = "Betriebsparameter"
     ws["A1"] = "Werkstattbestand je Sparte zum 01.01. (Anfangsbestand für die Zeile Bestandsveränderung UFE)"
     ws["A1"].font = FONT_BOLD
-    kopf = ["Sparte", "Geschäftsjahr", "Anfangsbestand"]
+    kopf = ["Sparte", "Geschäftsjahr", "Anfangsbestand"] + (["Herkunft"] if naeherung else [])
     for i, titel in enumerate(kopf, start=1):
         z = ws.cell(row=3, column=i, value=titel)
         z.font = FONT_HEADER
@@ -218,34 +423,77 @@ def schreibe_betriebsparameter_excel(anfangsbestand_je_jahr, out_path, parameter
             z = ws.cell(row=r, column=3, value=float(wert))
             z.number_format = "#,##0.00"
             z.border = BORDER
+            if naeherung:
+                aufgeteilt = sparte in naeherung.get(str(jahr), set())
+                ws.cell(row=r, column=4, value=("aufgeteilt (Naeherung)" if aufgeteilt
+                                                else "gepflegt")).border = BORDER
             r += 1
     # Zweite Tabelle: freie Parameter. Hier gehoeren die erwarteten Zuschlagssaetze
     # hin - damit eine hausweite Satzaenderung auffaellt, ohne dass der Sollwert im
     # oeffentlichen Repository steht.
-    for i, titel in ((5, "Parameter"), (6, "Wert")):
+    sp_par = 6 if naeherung else 5
+    for i, titel in ((sp_par, "Parameter"), (sp_par + 1, "Wert")):
         z = ws.cell(row=3, column=i, value=titel)
         z.font = FONT_HEADER
         z.fill = FILL_HEADER
         z.border = BORDER
     for i, (name, wert) in enumerate(sorted((parameter or {}).items()), start=4):
-        ws.cell(row=i, column=5, value=name).border = BORDER
-        z = ws.cell(row=i, column=6, value=float(wert))
+        ws.cell(row=i, column=sp_par, value=name).border = BORDER
+        z = ws.cell(row=i, column=sp_par + 1, value=float(wert))
         z.number_format = "0.0000"
         z.border = BORDER
-    ws.cell(row=max(len(parameter or {}), 1) + 6, column=5, value=(
-        "z.B. mgk_zuschlagssatz = 0,10 und vvgk_zuschlagssatz = 0,275. Weicht der aus "
-        "den Daten zurueckgerechnete Satz davon ab, meldet das Tool es."
+    ws.cell(row=max(len(parameter or {}), 1) + 6, column=sp_par, value=(
+        "Namen: mgk_zuschlagssatz und vvgk_zuschlagssatz, Wert als Dezimalzahl (z.B. 0,15 "
+        "fuer 15 %). Weicht der aus den Daten zurueckgerechnete Satz davon ab, meldet das "
+        "Tool es."
     )).font = Font(italic=True, size=9)
 
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 16
     ws.column_dimensions["C"].width = 18
-    ws.column_dimensions["D"].width = 3
-    ws.column_dimensions["E"].width = 24
-    ws.column_dimensions["F"].width = 12
+    for sp, b in ((("D", 22), ("E", 3), ("F", 24), ("G", 12)) if naeherung
+                  else (("D", 3), ("E", 24), ("F", 12))):
+        ws.column_dimensions[sp].width = b
     ws.freeze_panes = "A4"
+
+    # Optional: Umschluesselung alte -> neue Produktgruppe je Artikel (Reorganisation
+    # 2026). Gebraucht, solange im Jahr noch Buchungen unter alten Gruppen liegen.
+    if umschluesselung:
+        wu = wb.create_sheet("Umschluesselung")
+        wu["A1"] = ("Produktgruppen-Reorganisation: alte -> neue Gruppe je Artikel. Nur Artikel, "
+                    "deren Gruppe sich aendert.")
+        wu["A1"].font = Font(italic=True, size=9)
+        for i, titel in enumerate(("Artikel", "alte Produktgruppe", "neue Produktgruppe"), start=1):
+            z = wu.cell(row=3, column=i, value=titel)
+            z.font, z.fill, z.border = FONT_HEADER, FILL_HEADER, BORDER
+        for r, (art, (alt, neu)) in enumerate(sorted(umschluesselung.items()), start=4):
+            wu.cell(row=r, column=1, value=str(art))
+            wu.cell(row=r, column=2, value=alt)
+            wu.cell(row=r, column=3, value=neu)
+        for sp, b in (("A", 14), ("B", 20), ("C", 20)):
+            wu.column_dimensions[sp].width = b
+        wu.freeze_panes = "A4"
     wb.save(out_path)
     return out_path
+
+
+def betriebsparameter_fortschreiben(bisher, jahr, bestand, out_path):
+    """Schreibt die Betriebsparameter-Datei mit einem neuen Anfangsbestand fort.
+
+    'bisher' ist der Inhalt der hinterlegten Parameter (wie betriebsparameter_aus_excel
+    ihn liefert). Alles darin bleibt erhalten - die Anfangsbestaende der uebrigen
+    Jahre, die Zuschlagssaetze und die Umschluesselung. Frueher schrieb die Oberflaeche
+    nur den neuen Bestand; wer die Datei dann wieder lud, hatte alles andere verloren.
+    Der neue Bestand ist gemessen, nicht aufgeteilt - seine Naeherungs-Markierung entfaellt.
+    """
+    bisher = bisher or {}
+    jahre = {j: dict(w) for j, w in (bisher.get("anfangsbestand") or {}).items()}
+    jahre[str(jahr)] = dict(bestand)
+    naeherung = {j: set(v) for j, v in (bisher.get("anfangsbestand_naeherung") or {}).items()
+                 if j != str(jahr) and v}
+    schreibe_betriebsparameter_excel(jahre, out_path, parameter=bisher.get("parameter"),
+                                     umschluesselung=bisher.get("umschluesselung"),
+                                     naeherung=naeherung or None)
 
 
 def load_config(config_dir):
@@ -492,8 +740,13 @@ def lade_produktgruppen_map(pfak_pfade=None, kptm_df=None):
 
     if kptm_df is not None:
         auftrag_kandidaten = {}
+        # Nach einer Umschluesselung die GEBUCHTE Gruppe nehmen: PFAK kennt nur diese,
+        # und der Abgleich unten waere sonst bei jedem umgeschluesselten Auftrag ein
+        # scheinbarer Widerspruch. In die neue Struktur bringt werkstattbestand() sie.
+        sp_pg = ("Produktgruppe (gebucht)" if "Produktgruppe (gebucht)" in kptm_df.columns
+                 else "Produktgruppe")
         for kobj, art, pg in zip(kptm_df["Kostenobjekt"], kptm_df["Artikelnummer"],
-                                 kptm_df["Produktgruppe"]):
+                                 kptm_df[sp_pg]):
             pg = _schluessel(pg)
             if not pg:
                 continue
@@ -533,7 +786,8 @@ def lade_produktgruppen_map(pfak_pfade=None, kptm_df=None):
     return nach_auftrag, nach_artikel, mehrdeutig, widersprueche
 
 
-def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=None):
+def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=None,
+                     karte=None, aufgeloest=None):
     """Summiert den offenen Werkstattbestand je Produktgruppe zu einem Stichtag.
 
     Massgeblich ist die Spalte 'Offener Wert' (= Istwert abzueglich bereits
@@ -541,7 +795,11 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
 
     Ueber `manuelle_zuordnung` ({Auftragsnummer: Produktgruppe}) lassen sich einzelne
     Auftraege von Hand zuordnen - gedacht fuer die wenigen Posten, die keine Quelle
-    kennt. Diese Zuordnung hat Vorrang vor den automatischen Quellen.
+    kennt. Vorrang hat nur die Spalte 'Produktgruppe' des Werkstattbestands selbst (die
+    Sparte laut ERP); vor allen uebrigen Quellen geht die Handzuordnung.
+
+    Reihenfolge: Spalte 'Produktgruppe' > Hand > Auftragsnummer > Artikelnummer.
+    Dieselbe Reihenfolge bildet die Formel im Blatt 'Daten_PWBS_*' ab.
 
     Liefert (werte_je_produktgruppe, statistik). Die Statistik enthaelt auch die Liste
     der nicht zuordenbaren Auftraege, nach Wert absteigend - so lassen sich gezielt die
@@ -561,8 +819,22 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
     offene_auftraege = []
     service_verdacht = []
     manuell = manuelle_zuordnung or {}
-    for rm, art, bez, wert in zip(df["Rückmeldenummer"], df["Artikelnummer"],
-                                  df["Bezeichnung"], df["Offener Wert"]):
+    karte = karte or {}
+    # Seit Oktober 2026 liefert die Buchhaltung den Werkstattbestand mit der Spalte
+    # 'Produktgruppe' - die aktuelle Gruppe des Auftrags, also schon die neue Struktur.
+    # Dann braucht es weder PFAK noch den Umweg ueber die KPTM-Kostenobjekte.
+    spalte = df["Produktgruppe"] if "Produktgruppe" in df.columns else [None] * len(df)
+    ueber_spalte = 0.0
+
+    def neue_struktur(pg, art):
+        # Aeltere Quellen (PFAK, alte PWBS-Exporte) kennen nur die alte Gruppe.
+        ziel = karte.get(_schluessel(art))
+        if ziel and ziel[0] == pg:
+            pg = ziel[1]
+        return (aufgeloest or {}).get(pg, pg) if karte else pg
+
+    for rm, art, bez, wert, pg_spalte in zip(df["Rückmeldenummer"], df["Artikelnummer"],
+                                             df["Bezeichnung"], df["Offener Wert"], spalte):
         wert = float(wert or 0.0)
         if _schluessel(art) is None:
             # Serviceauftrag (Monteureinsatz, Inbetriebnahme, Schulung): kein Artikel,
@@ -583,8 +855,14 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
                     "wert": round(wert, 2),
                 })
             continue
-        ueber_auftrag = manuell.get(_schluessel(rm)) or nach_auftrag.get(_schluessel(rm))
+        von_hand = manuell.get(_schluessel(rm))
+        aus_spalte = _schluessel(pg_spalte)
+        ueber_auftrag = aus_spalte or von_hand or nach_auftrag.get(_schluessel(rm))
         pg = ueber_auftrag or nach_artikel.get(_schluessel(art))
+        if pg is not None:
+            pg = neue_struktur(pg, art)
+        if aus_spalte:
+            ueber_spalte += wert
         if pg is not None:
             je_pg[pg] = je_pg.get(pg, 0.0) + wert
             zugeordnet += wert
@@ -615,12 +893,15 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
         "ueber_artikel": round(ueber_artikel, 2),
         "service_mit_quelle": round(service_mit_quelle, 2),
         "service_verdacht": sorted(service_verdacht, key=lambda x: -x["wert"])[:20],
+        "mit_spalte": "Produktgruppe" in df.columns,
+        "ueber_spalte": round(ueber_spalte, 2),
     }
     return je_pg, statistik
 
 
 def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pwbs_anfang=None,
-                             max_luecke=0.01, jahr=None, kptm_df=None, manuelle_zuordnung=None):
+                             max_luecke=0.01, jahr=None, kptm_df=None, manuelle_zuordnung=None,
+                             karte=None, aufgeloest=None):
     """Bestandsveraenderung unfertige Erzeugnisse = Endbestand minus Anfangsbestand.
 
     Der Anfangsbestand kommt entweder aus einem PWBS-Export zum Periodenbeginn
@@ -644,7 +925,8 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     """
     nach_auftrag, nach_artikel, mehrdeutige_artikel, widersprueche = lade_produktgruppen_map(
         pfak_pfade, kptm_df=kptm_df)
-    ende, statistik = werkstattbestand(pwbs_ende, nach_auftrag, nach_artikel, manuelle_zuordnung)
+    ende, statistik = werkstattbestand(pwbs_ende, nach_auftrag, nach_artikel, manuelle_zuordnung,
+                                       karte=karte, aufgeloest=aufgeloest)
     # Kennzahlen zur Zuordnungsqualitaet sofort setzen, nicht erst am Ende: bei
     # blockierter Zeile wird frueh zurueckgekehrt, und dann fehlen genau die Angaben,
     # mit denen man die Blockade erklaeren koennte.
@@ -654,7 +936,15 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     luecke = statistik["luecke_quote"]
 
     warnungen = []
-    if luecke > max_luecke:
+    if luecke > max_luecke and not statistik["mit_spalte"] and not pfak_pfade:
+        # Ohne Produktgruppen-Spalte und ohne PFAK fehlt die Quelle - dann ist die
+        # Abhilfe nicht "neuerer PFAK", sondern die richtige Auswertung.
+        warnungen.append(
+            f"{luecke:.1%} des Werkstattbestands sind keiner Sparte zuzuordnen: Die Datei "
+            f"enthaelt keine Spalte 'Produktgruppe'. Bitte den Werkstattbestand in der "
+            f"Form mit Produktgruppe verwenden, wie ihn die Buchhaltung seit Oktober 2026 "
+            f"liefert - und zum Stichtag gezogen, nicht nachtraeglich.")
+    elif luecke > max_luecke:
         warnungen.append(
             f"{luecke:.1%} des Werkstattbestands entfallen auf {len(statistik['offene_auftraege'])} "
             f"Fertigungsauftraege, die keiner Sparte zugeordnet werden konnten "
@@ -668,7 +958,8 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
 
     if pwbs_anfang:
         anfang, stat_anfang = werkstattbestand(pwbs_anfang, nach_auftrag, nach_artikel,
-                                               manuelle_zuordnung)
+                                               manuelle_zuordnung, karte=karte,
+                                               aufgeloest=aufgeloest)
         luecke_a = stat_anfang["luecke_quote"]
         if luecke_a > max_luecke:
             warnungen.append(
@@ -711,8 +1002,10 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     # Sparten gepflegt, zeigen die uebrigen den vollen Endbestand statt der
     # Veraenderung. Das faellt in der Summe nicht auf, verfaelscht aber genau die
     # betroffenen Sparten - deshalb namentlich nennen.
+    # Ein ausdruecklich hinterlegtes 0,00 ist eine Aussage ("hatte keinen Bestand"),
+    # kein fehlender Wert - gemeldet wird nur, wo die Sparte gar nicht vorkommt.
     ohne_anfang = sorted(pg for pg, wert in ende.items()
-                         if abs(wert) > 0.005 and abs(anfang.get(pg, 0.0)) <= 0.005)
+                         if abs(wert) > 0.005 and pg not in anfang)
     if ohne_anfang:
         hinweise.append(
             f"Fuer {len(ohne_anfang)} Sparte(n) ist kein Anfangsbestand hinterlegt: "
@@ -970,14 +1263,12 @@ def lade_deckungsdifferenzen(pfad, mapping):
     umlage["Zeile"] = treffer.map(lambda r: r["zeile"] if r else "")
     umlage["Vorzeichen"] = treffer.map(lambda r: r["sign"] if r else 0)
 
-    werte, unbekannt = {}, {}
-    for (ka, ko, zeile, vz), betrag in umlage.groupby(
-            ["Kostenart", "Kostenobjekt", "Zeile", "Vorzeichen"])["Wert/Menge"].sum().items():
-        if not zeile:
-            unbekannt[ka] = unbekannt.get(ka, 0.0) + float(betrag)
-            continue
-        werte.setdefault(zeile, {})
-        werte[zeile][ko] = werte[zeile].get(ko, 0.0) + vz * float(betrag)
+    umlage["Ziel"] = umlage["Kostenobjekt"]
+    umlage["Anteil"] = 1.0
+    werte = _umlage_werte(umlage)
+    unbekannt = {}
+    for ka, betrag in umlage[umlage["Zeile"] == ""].groupby("Kostenart")["Wert/Menge"].sum().items():
+        unbekannt[ka] = float(betrag)
 
     return werte, {
         "unbekannt": {k: round(v, 2) for k, v in unbekannt.items() if abs(v) > 0.005},
@@ -986,6 +1277,36 @@ def lade_deckungsdifferenzen(pfad, mapping):
         "perioden": _perioden_aus_daten(df),
         "umlage_df": umlage,
     }
+
+
+def _umlage_werte(umlage):
+    """{zeile: {ziel: summe}} aus den Umlagezeilen - Wert x Vorzeichen x Anteil.
+    Dieselbe Rechnung steht als Formel im Blatt 'Daten_Kostentraeger'."""
+    werte = {}
+    gueltig = umlage[umlage["Zeile"] != ""]
+    betrag = gueltig["Wert/Menge"] * gueltig["Vorzeichen"] * gueltig["Anteil"]
+    for (zeile, ziel), summe in betrag.groupby([gueltig["Zeile"], gueltig["Ziel"]]).sum().items():
+        werte.setdefault(zeile, {})[ziel] = float(summe)
+    return werte
+
+
+def _umlage_aufteilen(umlage, anteile):
+    """Teilt Umlagezeilen, die auf einer alten (geteilten) Produktgruppe gebucht sind,
+    auf die neuen Gruppen auf: aus einer Zeile werden mehrere mit je einem Anteil.
+    Liefert (aufgeteilte Zeilen, Menge der (zeile, neue_pg) mit Anteil < 100 %)."""
+    teile, naeherung = [], set()
+    for _, z in umlage.iterrows():
+        aufteilung = anteile.get(z["Zeile"], {}).get(z["Kostenobjekt"])
+        if not aufteilung:
+            teile.append(z)
+            continue
+        for ziel, anteil in aufteilung.items():
+            neu = z.copy()
+            neu["Ziel"], neu["Anteil"] = ziel, anteil
+            teile.append(neu)
+            if anteil < 0.9999:
+                naeherung.add((z["Zeile"], ziel))
+    return pd.DataFrame(teile).reset_index(drop=True), naeherung
 
 
 def zuschlagssaetze(result, mapping):
@@ -1184,7 +1505,8 @@ def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
 
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
                  stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None,
-                 ufe_warnungen=None, zeilen_klasse=None, deckungsdifferenzen=None):
+                 ufe_warnungen=None, zeilen_klasse=None, deckungsdifferenzen=None,
+                 naeherung_zellen=None, struktur=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -1236,7 +1558,10 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         for j, c in enumerate(cols, start=2):
             val = float(result.loc[key, c])
             cell = ws.cell(row=row_i, column=j, value=round(val, 2))
-            cell.fill = FILLS[klass]
+            # Einzelne Zellen einer gruenen Zeile koennen eine Naeherung sein (anteilig
+            # auf die neuen Produktgruppen aufgeteilt) - die werden gelb.
+            cell.fill = (FILL_AUTO_PRUEF if klass == "auto" and (key, c) in (naeherung_zellen or ())
+                         else FILLS[klass])
             cell.border = BORDER
             cell.number_format = "#,##0.00"
         row_i += 1
@@ -1377,6 +1702,38 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
             "  verrechnete Seite. Die Differenzen kommen aus der Kostentraeger-Auswertung der Buchhaltung",
             "  (Penta, Objekttyp Kostentraeger) - die wurde fuer diese Datei nicht mitgegeben.",
         ] + ["  - " + h for h in dd.get("hinweise", [])]
+    struktur_abschnitt = []
+    if struktur and struktur.get("fehlt"):
+        struktur_abschnitt = [
+            "!!! PRODUKTGRUPPEN: ALTE UND NEUE STRUKTUR GEMISCHT !!!",
+            f"- Der Export enthaelt Buchungen auf inzwischen aufgeloesten Produktgruppen "
+            f"({', '.join(struktur['alte'])}), es ist aber keine Umschluesselung hinterlegt.",
+            "  Dieselbe Produktlinie steht dadurch in zwei Spalten. Abhilfe: die aktuelle",
+            "  betriebsparameter.xlsx (mit Blatt 'Umschluesselung') laden.",
+            "",
+        ]
+    elif struktur:
+        struktur_abschnitt = [
+            "NEUE PRODUKTGRUPPEN-STRUKTUR (Reorganisation 2026):",
+            "- Seit Periode 4/2026 bucht das ERP auf die neuen Produktgruppen. Aeltere Buchungen des",
+            "  Jahres stehen noch unter der alten Gruppe; sie werden je Artikel in die neue Struktur",
+            "  umgeschluesselt (Liste 'Alte vs Neue Produktgruppen', Blatt 'Umschluesselung').",
+            f"  Hier betroffen: {struktur['zeilen']} Buchungszeilen. Im Blatt 'Daten_KPTM' steht die",
+            "  urspruenglich gebuchte Gruppe in der Spalte 'Produktgruppe (gebucht)' daneben.",
+            "- Aufgeloeste Gruppen gehen an ihren Nachfolger (PB0003 Pilot Tubes -> PB0002).",
+            "- Drill Pipes (DP) und Injektionstechnik (IT) sind von der Reorganisation nicht betroffen.",
+            "",
+            "NAEHERUNG (gelb) - was nur je Produktgruppe vorliegt, nicht je Artikel:",
+            "- Deckungsdifferenzen, die die Buchhaltung noch auf einer alten, inzwischen geteilten Gruppe",
+            "  gebucht hat, werden nach ihrer Bezugsbasis anteilig verteilt: FEK-Differenz nach FEK,",
+            "  MGK-Differenz nach Material + Fremdleistungen, VVGK-Differenz nach Herstellkosten.",
+            "- Der Anfangsbestand zum 01.01. der geteilten Gruppen ist im Verhaeltnis des",
+            "  Werkstattbestands zum 01.01. je Auftrag aufgeteilt"
+            + (f" ({', '.join(struktur.get('naeherung_ab', []))})." if struktur.get("naeherung_ab") else "."),
+            "  Ueber die betroffenen Sparten zusammen sind die Werte exakt - geschaetzt ist nur die",
+            "  Verteilung zwischen ihnen.",
+            "",
+        ]
     hinweise = [
         "Diese Datei wurde automatisiert erzeugt (lokal im Browser, ERP-Export KPTM_Wertsummen / Penta).",
         "",
@@ -1396,10 +1753,11 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         "- MGK: Konto C599199 -> 13 centgenau, 1 Abweichung 3 EUR",
         "- overhead Kosten (VVGK vor Deckungsdifferenz): Konto Q500100 -> 12 centgenau, 3 unter 122 EUR",
         "",
-        "- Bestandsveraenderung UFE: Werkstattbestand(Stichtag) minus Werkstattbestand(01.01.), je Sparte",
-        "  ueber PWBS.Rueckmeldenummer = PFAK.RUECKMELDE_NR zugeordnet -> 13/13 Sparten centgenau.",
-        "  Wird nur berechnet, wenn PWBS- und PFAK-Dateien mitgegeben werden.",
+        "- Bestandsveraenderung UFE: Werkstattbestand(Stichtag) minus Werkstattbestand(01.01.), je Sparte.",
+        "  Die Sparte je Auftrag steht im Werkstattbestand selbst (Spalte 'Produktgruppe'); aeltere",
+        "  Exporte ohne diese Spalte werden ueber PFAK.RUECKMELDE_NR zugeordnet -> 13/13 Sparten centgenau.",
         "",
+        *struktur_abschnitt,
         "STRUKTURELL NULL (grau) - diese Zeilen gehoeren nicht auf die Sparten:",
         "- Personalaufwand, sbE, Afa: In der Kostentraegerrechnung stecken die Personalkosten bereits in",
         "  den Verrechnungssaetzen (Stundensatz, MGK-Zuschlag, Overhead-Pool). Ein zusaetzlicher",
@@ -1461,12 +1819,20 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
     wb.save(out_path)
 
 
-def deckungsdifferenzen_einsetzen(result, kostentraeger_pfad, mapping, kptm_df):
+def deckungsdifferenzen_einsetzen(result, kostentraeger_pfad, mapping, kptm_df, anteile=None):
     """Setzt die Deckungsdifferenzen (und Sonderposten) aus der Kostentraeger-Auswertung
     in das Ergebnis ein. Liefert (result, befund) - befund ist None, wenn die Datei
     nichts Verwertbares enthielt; dann bleiben die Zeilen wie sie waren (rosa).
+
+    'anteile' (siehe aufteilungsanteile): Differenzen, die noch auf einer alten,
+    inzwischen geteilten Produktgruppe gebucht sind, werden anteilig auf die neuen
+    Gruppen verteilt. befund["naeherung"] nennt die Zellen, die so entstanden sind.
     """
     werte, befund = lade_deckungsdifferenzen(kostentraeger_pfad, mapping)
+    befund["naeherung"] = set()
+    if anteile:
+        befund["umlage_df"], befund["naeherung"] = _umlage_aufteilen(befund["umlage_df"], anteile)
+        werte = _umlage_werte(befund["umlage_df"])
 
     # Beide Dateien muessen denselben Zeitraum abdecken. Eine Kostentraeger-Auswertung
     # zu Q1 neben einem KPTM-Export Jan-Juni ergaebe Deckungsdifferenzen, die nicht zu
@@ -1534,6 +1900,28 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
     df = load_kptm(kptm_path)
     abgeleitet, dateiname = zeitraum_aus_daten(df, kptm_path)
     zeitraum = zeitraum or abgeleitet
+    jahr = geschaeftsjahr(df, zeitraum)
+
+    # Neue Produktgruppen-Struktur (Reorganisation 2026): Buchungen unter alten Gruppen
+    # werden artikelgenau umgeschluesselt, damit das ganze Jahr in EINER Struktur steht.
+    # Nur ab dem Umstellungsjahr - aeltere Zeitraeume bleiben, wie sie gebucht wurden.
+    params = lade_betriebsparameter(config_dir)
+    aufgeloest = pg_config.get("aufgeloest", {})
+    ab_jahr = pg_config.get("umstellung_ab_jahr")
+    karte = (params.get("umschluesselung") or {}) if (
+        jahr and ab_jahr and int(jahr) >= int(ab_jahr)) else {}
+    struktur = None
+    if karte:
+        df, struktur = umschluesseln(df, karte, aufgeloest)
+        struktur["naeherung_ab"] = sorted(
+            (params.get("anfangsbestand_naeherung") or {}).get(str(jahr), []))
+    else:
+        aufgeloest = {}
+        # Ohne Umschluesselung stuenden alte und neue Gruppen nebeneinander - dieselbe
+        # Produktlinie in zwei Spalten. Das faellt in der Summe nicht auf, deshalb melden.
+        alte = sorted(set(df["Produktgruppe"].dropna()) & set(pg_config.get("aufgeloest", {})))
+        if jahr and ab_jahr and int(jahr) >= int(ab_jahr) and alte:
+            struktur = {"fehlt": True, "alte": alte}
     # Der Stundensatz wird aus den Rohdaten errechnet, nicht gepflegt (siehe
     # ermittle_stundensatz). Ein hinterlegter Wert dient nur noch als Rueckfall.
     satz = ermittle_stundensatz(df, mapping)
@@ -1544,7 +1932,9 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
 
     dd_befund = None
     if kostentraeger_pfad:
-        result, dd_befund = deckungsdifferenzen_einsetzen(result, kostentraeger_pfad, mapping, df)
+        result, dd_befund = deckungsdifferenzen_einsetzen(
+            result, kostentraeger_pfad, mapping, df,
+            anteile=aufteilungsanteile(df, mapping) if karte else None)
     dd_geladen = bool(dd_befund and dd_befund.get("geladen"))
     # Geladene Deckungsdifferenzen sind gruen, nicht mehr rosa. Die Sonderposten-Zeile
     # nur dann, wenn tatsaechlich etwas auf einer Sparte landet - sonst bleibt sie grau.
@@ -1557,7 +1947,6 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
 
     ufe_warnungen = []
     ufe_statistik = None
-    jahr = geschaeftsjahr(df, zeitraum)
     gespeicherter_ab = lade_anfangsbestand(config_dir, jahr)
     nach_auftrag = nach_artikel = None
     if pwbs_ende:
@@ -1565,12 +1954,30 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         nach_auftrag, nach_artikel, _, _ = lade_produktgruppen_map(pfak_pfade, kptm_df=df)
         ufe, ufe_warnungen, ufe_statistik = bestandsveraenderung_ufe(
             pwbs_ende, pfak_pfade, anfangsbestand=gespeicherter_ab, pwbs_anfang=pwbs_anfang,
-            jahr=jahr, kptm_df=df, manuelle_zuordnung=manuelle_zuordnung)
+            jahr=jahr, kptm_df=df, manuelle_zuordnung=manuelle_zuordnung,
+            karte=karte, aufgeloest=aufgeloest)
         if ufe:
             for pg, wert in ufe.items():
+                if pg not in result.columns and abs(wert) > 0.005:
+                    # Sparte mit Werkstattbestand, aber ohne Buchung im Zeitraum -
+                    # eigene Spalte statt den Betrag still fallen zu lassen.
+                    result[pg] = 0.0
                 if pg in result.columns:
                     result.loc["bestand_ufe", pg] = wert
             result = neu_berechnen(result)
+
+    # Aufgeloeste Gruppen (z.B. PB0003) sind nach der Umschluesselung leer - die
+    # Spalte bleibt dann weg. Traegt sie doch noch etwas, bleibt sie sichtbar.
+    for weg in aufgeloest:
+        if weg in result.columns and not (result[weg].abs() > 0.005).any():
+            result = result.drop(columns=weg)
+            produktgruppen = [p for p in produktgruppen if p != weg]
+
+    # Gelb statt gruen: Zellen, die aus einer anteiligen Aufteilung stammen.
+    naeherung_zellen = set((dd_befund or {}).get("naeherung", set())) if dd_geladen else set()
+    if struktur and not struktur.get("fehlt") and pwbs_ende:
+        naeherung_zellen |= {("bestand_ufe", pg) for pg in struktur["naeherung_ab"]
+                             if pg in result.columns}
 
     bwa_ergebnis = None
     if bwa_path and bwa_sheet:
@@ -1585,12 +1992,17 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
                  ufe_warnungen=ufe_warnungen if pwbs_ende else None,
                  zeilen_klasse=zeilen_klasse,
                  deckungsdifferenzen=dd_befund,
+                 naeherung_zellen=naeherung_zellen,
+                 struktur=struktur,
                  herleitung={
                      "kostentraeger": ({"umlage": dd_befund["umlage_df"],
                                         "zeilen_gesamt": dd_befund["zeilen_gesamt"]}
                                        if dd_geladen else None),
                      "produktgruppen": produktgruppen,
                      "kptm_df": df,
+                     "umschluesselung": karte or None,
+                     "aufgeloest": aufgeloest,
+                     "anfangsbestand_naeherung": (struktur or {}).get("naeherung_ab"),
                      "pwbs_ende": pwbs_ende,
                      "pwbs_anfang": pwbs_anfang,
                      "nach_auftrag": nach_auftrag,
@@ -1632,6 +2044,8 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
             "hinweise": (dd_befund or {}).get("hinweise", []),
             "summen": {z: float(result.loc[z, "Summe"]) for z in DD_ZEILEN} if dd_geladen else {},
         },
+        "struktur": ({k: v for k, v in struktur.items() if k != "paare"} if struktur else None),
+        "naeherung_zellen": len(naeherung_zellen),
         "db3_summe": float(result.loc["db3", "Summe"]),
         "erloese_summe": float(result.loc["erloese", "Summe"]),
     }
