@@ -86,9 +86,10 @@ const INFO_TEXTE = {
     (z.&nbsp;B. &bdquo;SuSa 01-09.2026.csv&ldquo;) f&uuml;r denselben Zeitraum &ndash; sie kommt
     zusammen mit der Kostentr&auml;ger-Auswertung.
     <strong>Was</strong>Anfangs- und Endsaldo jedes Sachkontos.
-    <strong>Warum</strong>Zur Abstimmung: Das Tool pr&uuml;ft damit, ob die Erl&ouml;se mit der FiBu
+    <strong>Warum</strong>Nur zur Abstimmung: Das Tool pr&uuml;ft damit, ob die Erl&ouml;se mit der FiBu
     &uuml;bereinstimmen und ob der Werkstattbestand dem Bilanzwert entspricht (richtiger
-    Stichtag, vollst&auml;ndige Datei). In die Rechnung selbst flie&szlig;t sie nicht ein.`,
+    Stichtag, vollst&auml;ndige Datei). In die Rechnung selbst flie&szlig;t sie nicht ein &ndash;
+    ohne SuSa entsteht dieselbe Spartenrechnung, nur ohne diese Gegenprobe.`,
   "abstimmung": `<strong>Was ist es</strong>Eine Gegenprobe ohne Referenzrechnung: Das Ergebnis wird
     gegen zwei Quellen der Buchhaltung gehalten, die unabh&auml;ngig vom KPTM-Export entstehen.
     <strong>Berechnung</strong>(1) Aus der Kostentr&auml;ger-Auswertung wird jede Zeile je Sparte ein
@@ -433,10 +434,6 @@ form.addEventListener("submit", async (e) => {
     showError("Bitte die Kostenträger-Auswertung der Buchhaltung auswählen.");
     return;
   }
-  if (!susaFile) {
-    showError("Bitte die Summen- und Saldenliste (SuSa) der Buchhaltung auswählen – sie wird für die Abstimmung gebraucht.");
-    return;
-  }
   if (!pwbsEndeFile) {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
     return;
@@ -452,7 +449,8 @@ form.addEventListener("submit", async (e) => {
     // KPTM-Namen laesst sich notfalls der Zeitraum lesen.
     const kptmPfad = await ablegen("/kptm", kptmFile);
     const ktPfad = await ablegen("/kostentraeger", kostentraegerFile);
-    const susaPfad = await ablegen("/susa", susaFile);
+    // Optional: ohne SuSa entfaellt nur die Abstimmung mit der FiBu, gerechnet wird trotzdem.
+    const susaPfad = susaFile ? await ablegen("/susa", susaFile) : null;
 
     // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
     // Der Anfangsbestand kommt aus den hinterlegten Betriebsparametern.
@@ -493,7 +491,7 @@ summary = spartenrechnung_core.generate(
     pwbs_anfang=${L.pwbsAArg}, pwbs_ende=${L.pwbsEArg}, pfak_pfade=${L.pfakArg},
     manuelle_zuordnung=${manuellArg},
     kostentraeger_pfad=${JSON.stringify(L.ktPfad)},
-    susa_pfad=${JSON.stringify(L.susaPfad)},
+    susa_pfad=${L.susaPfad ? JSON.stringify(L.susaPfad) : "None"},
 )
 json.dumps(summary)
   `);
@@ -562,6 +560,12 @@ function showResult(summary, url, filename) {
         html += `</div>`;
       }
     }
+  }
+
+  if (abst.length && !summary.susa_geladen) {
+    html += `<p class="hinweis">Ohne SuSa: Die Abstimmung mit der FiBu (Erlöse,
+      Werkstattbestand, Anfangsbestand) entfällt – geprüft wurde nur gegen die
+      Kostenträger-Auswertung.</p>`;
   }
 
   const st = summary.struktur;

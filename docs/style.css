@@ -131,7 +131,8 @@ h1, h2 { margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
   color: var(--text);
 }
 
-.field .required {
+.field .required,
+.field .optional {
   color: var(--rot-text);
   background: var(--rot-bg);
   font-weight: 600;
@@ -142,6 +143,12 @@ h1, h2 { margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+/* Optionale Felder: gleiche Form wie "Pflicht", aber neutral - nichts fehlt, wenn leer. */
+.field .optional {
+  color: var(--text-muted);
+  background: var(--bg);
 }
 
 input[type="text"], select {

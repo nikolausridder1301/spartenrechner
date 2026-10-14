@@ -103,7 +103,7 @@ Hochzuladen sind drei Dateien plus – einmal im Jahr – der Anfangsbestand:
 |---|---|
 | `KPTM_Wertsummen_*.xls` | SQL-Abfrage ans ERP, kumuliert seit Jahresbeginn |
 | Kostenträger-Auswertung | Buchhaltung, nach dem Monatsabschluss gezogen |
-| SuSa (Summen- und Saldenliste) | Buchhaltung, gleicher Zeitraum – nur für die Abstimmung |
+| SuSa (Summen- und Saldenliste), **optional** | Buchhaltung, gleicher Zeitraum – nur für die Abstimmung mit der FiBu |
 | `PWBS_Werkstattbestand_*.xls` **mit Spalte Produktgruppe** | Buchhaltung, **am Stichtag** gezogen |
 
 ### Abstimmung mit der Buchhaltung – Prüfung ohne Referenzrechnung
