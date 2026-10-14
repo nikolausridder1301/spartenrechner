@@ -12,7 +12,6 @@ let pyodide = null;
 let kptmFile = null;
 let kostentraegerFile = null;
 let susaFile = null;
-let pwbsAnfangFile = null;
 let pwbsEndeFile = null;
 
 function setupDropzone(zoneId, textId, inputId, onFile) {
@@ -47,12 +46,6 @@ setupDropzone("dropzone-kt", "dropzone-kt-text", "file-kt", (file, zone, text) =
 
 setupDropzone("dropzone-susa", "dropzone-susa-text", "file-susa", (file, zone, text) => {
   susaFile = file;
-  zone.classList.add("has-file");
-  text.textContent = "✓ " + file.name;
-});
-
-setupDropzone("dropzone-pwbs-a", "dropzone-pwbs-a-text", "file-pwbs-a", (file, zone, text) => {
-  pwbsAnfangFile = file;
   zone.classList.add("has-file");
   text.textContent = "✓ " + file.name;
 });
@@ -104,13 +97,15 @@ const INFO_TEXTE = {
     sind, mit ihrem bisher aufgelaufenen Wert (unfertige Erzeugnisse) und ihrer Sparte.
     <strong>Warum</strong>Ohne diese Datei fehlt die Zeile &bdquo;Bestandsver&auml;nderung UFE&ldquo; &ndash;
     Betriebsleistung und Rohmarge w&auml;ren unvollst&auml;ndig.`,
-  "anfangsbestand": `<strong>Woher</strong>Entweder ein weiterer ERP-Export
-    &bdquo;PWBS_Werkstattbestand&ldquo; mit Stichtag 01.01., oder &ndash; einfacher &ndash; eine schon
-    einmal gesicherte Datei betriebsparameter.xlsx.
-    <strong>Was</strong>Der Werkstattbestand zu Jahresbeginn, also der Startwert f&uuml;r das laufende
-    Gesch&auml;ftsjahr.
-    <strong>Warum</strong>Ohne diesen Startwert l&auml;sst sich die Ver&auml;nderung des Bestands im
-    Jahresverlauf nicht berechnen &ndash; der Endwert allein reicht nicht.`,
+  "betriebsparameter": `<strong>Woher</strong>Die Datei betriebsparameter.xlsx &ndash; einmal von
+    Ihnen gesichert (Button am Ende einer Berechnung) oder vom Controlling bereitgestellt.
+    Sie wird im Browser gespeichert und danach automatisch verwendet.
+    <strong>Was</strong>Der Werkstattbestand zu Jahresbeginn je Sparte (Anfangsbestand), die
+    Zuschlagss&auml;tze als Sollwert und &ndash; im Jahr der Produktgruppen-Reorganisation &ndash; die
+    Liste, welcher Artikel in welche neue Produktgruppe geh&ouml;rt.
+    <strong>Warum</strong>Ohne Anfangsbestand l&auml;sst sich die Ver&auml;nderung des Bestands im
+    Jahresverlauf nicht berechnen &ndash; der Endwert allein reicht nicht. Ohne die
+    Umschl&uuml;sselung stehen alte und neue Produktgruppen nebeneinander.`,
 
   // --- Zeilen im Ergebnisteil: was die Zahl ist und wie sie zustande kommt ---
   "zeilen": `<strong>Was ist es</strong>Die Anzahl der Buchungszeilen, die aus dem
@@ -454,17 +449,13 @@ form.addEventListener("submit", async (e) => {
     const susaPfad = await ablegen("/susa", susaFile);
 
     // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
-    // Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante, eine PWBS-Datei
-    // zum Periodenbeginn ist daher nur ein Zusatz.
+    // Der Anfangsbestand kommt aus den hinterlegten Betriebsparametern.
     // Unter dem Originalnamen: der Stichtag steht nur im Dateinamen (z.B. ..._010426)
     // und wird gegen den Zeitraum des KPTM-Exports geprueft.
-    let pwbsAArg = "None";
+    const pwbsAArg = "None";
     const pwbsEArg = JSON.stringify(await ablegen("/pwbs_ende", pwbsEndeFile));
     // PFAK wird nicht mehr gebraucht: der Werkstattbestand bringt die Sparte selbst mit.
     const pfakArg = "None";
-    if (pwbsAnfangFile) {
-      pwbsAArg = JSON.stringify(await ablegen("/pwbs_anfang", pwbsAnfangFile));
-    }
 
     letzterLauf = { kptmPfad, ktPfad, susaPfad, pwbsAArg, pwbsEArg, pfakArg };
     manuelleZuordnung = {};   // neuer Lauf mit neuen Dateien: alte Zuordnungen verwerfen

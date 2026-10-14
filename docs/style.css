@@ -213,23 +213,6 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
   color: var(--text-muted);
 }
 
-.oder-trenner {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.7rem 0;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.oder-trenner::before, .oder-trenner::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
 .anfangsbestand-box .hinweis {
   font-size: 0.8rem;
   color: var(--text-muted);

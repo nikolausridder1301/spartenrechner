@@ -1034,17 +1034,16 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
                 f"unausgefuellte Vorlage, keine gepflegten Werte. Gerechnet wuerde sonst "
                 f"{sum(ende.values()):,.2f} EUR, also der volle Endbestand statt der "
                 f"Veraenderung. Abhilfe: in der Vorlage je Sparte den Werkstattbestand "
-                f"zum 01.01. eintragen, oder stattdessen den PWBS-Export mit Stichtag "
-                f"01.01. in dasselbe Feld laden."
+                f"zum 01.01. eintragen und die Datei erneut laden."
             )
     else:
         warnungen.append(
-            f"Kein Anfangsbestand fuer das Geschaeftsjahr {jahr or '(unbekannt)'}. Abhilfe: den "
-            f"PWBS-Export mit Stichtag 01.01.{jahr or 'JJJJ'} im Feld 'Anfangsbestand' "
-            f"zusaetzlich hochladen. Das ist derselbe Report wie der monatliche, "
-            f"nur mit anderem Stichtag; beim Abschluss des Januars brauchen Sie ihn ohnehin. "
-            f"Danach zeigt das Tool die errechneten Werte an, damit sie fuer die restlichen "
-            f"Monate des Jahres hinterlegt werden koennen."
+            f"Kein Anfangsbestand fuer das Geschaeftsjahr {jahr or '(unbekannt)'} in den "
+            f"Betriebsparametern. Der Anfangsbestand ist der Werkstattbestand zum "
+            f"01.01.{jahr or 'JJJJ'}: Er ergibt sich aus dem Abschluss des Vorjahres "
+            f"(Stichtag 01.01.) - dort bietet das Tool nach der Berechnung an, ihn als "
+            f"betriebsparameter.xlsx zu sichern. Alternativ in der Kommandozeile mit "
+            f"--pwbs-anfang den Werkstattbestand zum 01.01. angeben."
         )
         return None, warnungen, statistik
 

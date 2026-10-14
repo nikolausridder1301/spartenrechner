@@ -155,14 +155,19 @@ Die UFE-Zeile ist `Bestand(Stichtag) − Bestand(01.01.)`. Den Stichtagswert rec
 das Tool aus der PWBS-Datei; den Wert zum 01.01. bildet keiner der Exporte ab,
 weil alle am 01.01. *beginnen*. Er ist als Jahreskonstante hinterlegt.
 
-Von Hand pflegen muss man ihn trotzdem nicht:
+Von Hand pflegen muss man ihn trotzdem nicht. In der Weboberfläche gibt es dafür nur
+das Feld **Betriebsparameter** (`betriebsparameter.xlsx`):
 
-1. Beim **Abschluss des Januars** brauchen Sie ohnehin den Bestand zum 01.01. –
-   laden Sie den PWBS-Export mit diesem Stichtag im Feld „Anfangsbestand" hoch.
-2. Das Tool zeigt danach unter **„Werkstattbestand als Betriebsparameter sichern"**
-   den errechneten Bestand als fertige **Excel-Tabelle** an. Einmal speichern –
-   die übrigen Inhalte der Datei (andere Jahre, Zuschlagssätze, Umschlüsselung)
-   bleiben dabei erhalten.
+1. Beim **Jahresabschluss** (Stichtag 01.01. des Folgejahres) zeigt das Tool nach der
+   Berechnung unter **„Werkstattbestand als Betriebsparameter sichern"** den
+   errechneten Bestand als fertige **Excel-Tabelle** an. Einmal speichern – die
+   übrigen Inhalte der Datei (andere Jahre, Zuschlagssätze, Umschlüsselung) bleiben
+   dabei erhalten.
+2. Diese Datei im Feld „Betriebsparameter" laden. Sie wird im Browser gespeichert und
+   danach automatisch verwendet – das reicht für alle Monate des Jahres.
+
+Die Kommandozeile kennt zusätzlich `--pwbs-anfang` (Werkstattbestand zum 01.01.
+direkt angeben).
 
 Geprüft: Der so ausgegebene Bestand ist als Anfangsbestand der Folgeperiode
 centgenau verwendbar (`UFE(Jan–Jun) = UFE(Q1) + [Bestand(01.07.) − Bestand(01.04.)]`,
