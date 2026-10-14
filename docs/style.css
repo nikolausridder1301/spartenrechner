@@ -746,3 +746,5 @@ footer a { color: var(--accent); }
   color: var(--text-muted);
   line-height: 1.45;
 }
+.kachel-link { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.kachel-link:hover, .kachel-link:focus-visible { border-color: var(--accent); background: var(--accent-bg); outline: none; }

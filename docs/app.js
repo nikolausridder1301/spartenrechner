@@ -694,7 +694,7 @@ function showResult(summary, url, filename) {
   html += `<div class="kacheln">
     <div class="kachel"><span class="kachel-label">Erlöse</span><span class="kachel-wert">${eurF(summary.erloese_summe)} €</span></div>
     <div class="kachel"><span class="kachel-label">DB III (Sparten)</span><span class="kachel-wert">${eurF(summary.db3_summe)} €</span></div>
-    <div class="kachel"><span class="kachel-label">Abstimmung</span><span class="kachel-wert">${abst.length ? `${nOk} / ${abst.length}${nOk === abst.length ? " ✓" : ""}` : "–"}</span></div>
+    <div class="kachel${abst.length ? " kachel-link" : ""}" id="kachel-abstimmung"${abst.length ? ' role="button" tabindex="0" title="Prüfungen anzeigen"' : ""}><span class="kachel-label">Prüfungen bestanden</span><span class="kachel-wert">${abst.length ? `${nOk} / ${abst.length}${nOk === abst.length ? " ✓" : ""}` : "–"}</span></div>
   </div>`;
   html += `<a class="download-btn" href="${url}" download="${filename}">⬇ ${esc(filename)} herunterladen</a>`;
 
@@ -818,6 +818,20 @@ function showResult(summary, url, filename) {
 
   resultBox.innerHTML = html;
   resultBox.style.display = "block";
+
+  // Die Kachel "Pruefungen bestanden" oeffnet die Liste der Pruefungen.
+  const kachel = document.getElementById("kachel-abstimmung");
+  const abschnitt = document.getElementById("ab-abstimmung");
+  if (kachel && abschnitt) {
+    const oeffnen = () => {
+      abschnitt.open = true;
+      abschnitt.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    kachel.addEventListener("click", oeffnen);
+    kachel.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); oeffnen(); }
+    });
+  }
 
   const sichernBtn = document.getElementById("param-sichern");
   if (sichernBtn) {
