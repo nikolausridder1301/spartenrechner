@@ -18,6 +18,12 @@ function setupDropzone(zoneId, textId, inputId, onFile) {
   const zone = document.getElementById(zoneId);
   const text = document.getElementById(textId);
   const input = document.getElementById(inputId);
+  // Fehlt ein Feld (Seite und Skript aus verschiedenen Versionen), dieses eine Feld
+  // auslassen statt das ganze Skript abzubrechen - sonst startet Python nie.
+  if (!zone || !text || !input) {
+    console.warn("Feld fehlt auf der Seite:", zoneId);
+    return;
+  }
 
   zone.addEventListener("click", () => input.click());
   input.addEventListener("change", () => {

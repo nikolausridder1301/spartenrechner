@@ -99,7 +99,33 @@
     </footer>
   </div>
 
+  <script>
+    /* Die Seite darf nie stumm bei "wird geladen" haengen bleiben. Bricht ein Skript ab
+       oder dauert das Laden ungewoehnlich lange, steht das hier - mit dem, was hilft. */
+    (function () {
+      const status = document.getElementById("loading-status");
+      const formSichtbar = () => document.getElementById("form").style.display !== "none";
+      window.addEventListener("error", function (e) {
+        if (formSichtbar()) return;
+        status.classList.add("error");
+        status.textContent = "❌ Die Seite konnte nicht gestartet werden (" + (e.message || "Skriptfehler")
+          + "). Bitte mit Strg + F5 neu laden – meist ist nach einer Aktualisierung noch "
+          + "eine alte Version im Browser zwischengespeichert.";
+      });
+      setTimeout(function () {
+        if (formSichtbar() || status.classList.contains("error")) return;
+        status.textContent += " – dauert ungewöhnlich lange. Bitte mit Strg + F5 neu laden. "
+          + "Hilft das nicht, blockiert vermutlich das Firmennetz den Download der "
+          + "Python-Umgebung (cdn.jsdelivr.net).";
+      }, 60000);
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
-  <script src="app.js"></script>
+  <script>
+    /* app.js immer frisch laden. GitHub Pages laesst den Browser jede Datei 10 Minuten
+       zwischenspeichern, unabhaengig voneinander - nach einer Aktualisierung passten
+       sonst neue Seite und altes Skript nicht zusammen. */
+    document.write('<script src="app.js?t=' + Date.now() + '"><\/script>');
+  </script>
 </body>
 </html>
