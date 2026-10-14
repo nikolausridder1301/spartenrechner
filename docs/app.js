@@ -430,16 +430,14 @@ form.addEventListener("submit", async (e) => {
     // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
     // Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante, eine PWBS-Datei
     // zum Periodenbeginn ist daher nur ein Zusatz.
+    // Unter dem Originalnamen: der Stichtag steht nur im Dateinamen (z.B. ..._010426)
+    // und wird gegen den Zeitraum des KPTM-Exports geprueft.
     let pwbsAArg = "None";
-    const extE = pwbsEndeFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
-    pyodide.FS.writeFile("/pwbs_ende" + extE, new Uint8Array(await pwbsEndeFile.arrayBuffer()));
-    const pwbsEArg = JSON.stringify("/pwbs_ende" + extE);
+    const pwbsEArg = JSON.stringify(await ablegen("/pwbs_ende", pwbsEndeFile));
     // PFAK wird nicht mehr gebraucht: der Werkstattbestand bringt die Sparte selbst mit.
     const pfakArg = "None";
     if (pwbsAnfangFile) {
-      const extA = pwbsAnfangFile.name.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx";
-      pyodide.FS.writeFile("/pwbs_anfang" + extA, new Uint8Array(await pwbsAnfangFile.arrayBuffer()));
-      pwbsAArg = JSON.stringify("/pwbs_anfang" + extA);
+      pwbsAArg = JSON.stringify(await ablegen("/pwbs_anfang", pwbsAnfangFile));
     }
 
     letzterLauf = { kptmPfad, ktPfad, pwbsAArg, pwbsEArg, pfakArg };

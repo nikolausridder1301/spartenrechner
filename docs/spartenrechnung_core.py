@@ -647,6 +647,62 @@ def _perioden_aus_daten(df):
             int(jahre.min()), int(jahre.max()))
 
 
+def _stichtag_aus_dateiname(pfad):
+    """Stichtag aus dem Dateinamen eines Werkstattbestands, z.B.
+    'PWBS_Werkstattbestand_010426.xls' oder '..._010326_Produktgruppe.xls' -> 1.4.2026.
+    Die Datei selbst traegt kein Datum - der Name ist die einzige Angabe."""
+    import datetime
+    treffer = re.search(r"Werkstattbestand[_ ]?(\d{2})(\d{2})(\d{2})(?!\d)",
+                        os.path.basename(str(pfad)), re.IGNORECASE)
+    if not treffer:
+        return None
+    tag, monat, jahr = (int(x) for x in treffer.groups())
+    try:
+        return datetime.date(2000 + jahr, monat, tag)
+    except ValueError:
+        return None
+
+
+def pruefe_stichtag(pfad, kptm_df, art):
+    """Passt der Stichtag des Werkstattbestands zum Zeitraum des KPTM-Exports?
+
+    Der Bestand zum Periodenende gehoert auf den ersten Tag NACH dem Zeitraum (Jan-Maerz
+    -> 01.04.), der Anfangsbestand auf den 01.01. Der Vortag wird ebenso akzeptiert
+    (31.03. statt 01.04.). Ein Werkstattbestand mit falschem Stichtag rechnet still eine
+    falsche UFE-Zeile - plausibel aussehend, um eine ganze Monatsbewegung daneben. Das ist
+    passiert: Q1 mit dem Bestand zum 01.03. statt 01.04.
+
+    Wirft ValueError bei Widerspruch. Liefert einen Hinweis-Text, wenn der Dateiname kein
+    Datum traegt (dann ist keine Pruefung moeglich), sonst None.
+    """
+    import datetime
+    spanne = _perioden_aus_daten(kptm_df)
+    stichtag = _stichtag_aus_dateiname(pfad)
+    name = os.path.basename(str(pfad))
+    if spanne is None:
+        return None
+    von, bis, j_von, j_bis = spanne
+    if art == "ende":
+        erster = (datetime.date(j_bis + 1, 1, 1) if bis == 12
+                  else datetime.date(j_bis, bis + 1, 1))
+    else:
+        erster = datetime.date(j_von, von, 1)
+    erlaubt = {erster, erster - datetime.timedelta(days=1)}
+    wofuer = "zum Periodenende" if art == "ende" else "zum Periodenbeginn (Anfangsbestand)"
+    if stichtag is None:
+        return (f"Der Stichtag des Werkstattbestands {wofuer} ist aus dem Dateinamen "
+                f"'{name}' nicht ablesbar - bitte selbst pruefen, dass es der "
+                f"{erster:%d.%m.%Y} ist.")
+    if stichtag not in erlaubt:
+        raise ValueError(
+            f"Der Werkstattbestand '{name}' ist der Stand vom {stichtag:%d.%m.%Y}. "
+            f"Der KPTM-Export reicht bis Periode {bis}/{j_bis} - {wofuer} gehoert deshalb der "
+            f"Werkstattbestand zum {erster:%d.%m.%Y}. Mit dem falschen Stichtag waere die "
+            f"Zeile 'Bestandsveraenderung UFE' um die Bewegung der fehlenden bzw. "
+            f"ueberzaehligen Monate falsch - und mit ihr DB I bis DB III.")
+    return None
+
+
 def zeitraum_aus_daten(df, kptm_path=None):
     """Leitet den Auswertungszeitraum aus dem Export ab.
 
@@ -1948,6 +2004,11 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
     ufe_warnungen = []
     ufe_statistik = None
     gespeicherter_ab = lade_anfangsbestand(config_dir, jahr)
+    # Vor allem anderen: passen die Stichtage zum Zeitraum? Sonst ist jede weitere
+    # Pruefung der UFE-Zeile wertlos.
+    stichtag_hinweise = [h for h in (
+        pruefe_stichtag(pwbs_ende, df, "ende") if pwbs_ende else None,
+        pruefe_stichtag(pwbs_anfang, df, "anfang") if pwbs_anfang else None) if h]
     nach_auftrag = nach_artikel = None
     if pwbs_ende:
         # PFAK ist optional: die Zuordnung Auftrag -> Produktgruppe steckt bereits in KPTM.
@@ -1956,6 +2017,8 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
             pwbs_ende, pfak_pfade, anfangsbestand=gespeicherter_ab, pwbs_anfang=pwbs_anfang,
             jahr=jahr, kptm_df=df, manuelle_zuordnung=manuelle_zuordnung,
             karte=karte, aufgeloest=aufgeloest)
+        if ufe_statistik is not None:
+            ufe_statistik["hinweise"] = stichtag_hinweise + ufe_statistik.get("hinweise", [])
         if ufe:
             for pg, wert in ufe.items():
                 if pg not in result.columns and abs(wert) > 0.005:
