@@ -441,6 +441,7 @@ form.addEventListener("submit", async (e) => {
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Wird berechnet …";
+  await rechenAnimationZeigen();
 
   try {
     // Unter dem Originalnamen ablegen, je Feld in einem eigenen Ordner: Fehlermeldungen
@@ -467,6 +468,7 @@ form.addEventListener("submit", async (e) => {
   } catch (err) {
     showError(fehlertext(err));
   } finally {
+    rechenAnimationVerbergen();
     submitBtn.disabled = false;
     submitBtn.textContent = "Spartenrechnung erstellen";
   }
@@ -480,7 +482,68 @@ let letzterLauf = null;
 // Auftraege, die frueheren Eintraege stehen dort also nicht mehr zur Auswahl.
 let manuelleZuordnung = {};
 
+/* Rechen-Animation. Das Zaehlwerk wird einmal aufgebaut: Ziffernwalzen mit
+   unterschiedlicher Drehzahl (rechts schnell, links langsam) in Euro-Schreibweise. */
+function zaehlwerkAufbauen() {
+  const ziel = document.getElementById("zaehlwerk");
+  if (!ziel || ziel.childElementCount) return;
+  const muster = "1.234.567,89 €";
+  const ziffern = [...muster].filter((z) => /\d/.test(z)).length;
+  let stelle = 0;
+  for (const z of muster) {
+    if (!/\d/.test(z)) {
+      const s = document.createElement("span");
+      s.className = "zeichen";
+      s.textContent = z === " " ? "\u00a0" : z;
+      ziel.appendChild(s);
+      continue;
+    }
+    const walze = document.createElement("span");
+    walze.className = "walze";
+    const band = document.createElement("span");
+    band.className = "band";
+    // Rechte Stellen drehen schnell, linke langsam - wie ein echtes Zaehlwerk.
+    const rang = ziffern - 1 - stelle;
+    band.style.setProperty("--dauer", (0.5 + rang * 0.55).toFixed(2) + "s");
+    band.style.animationDelay = (-Math.random() * 3).toFixed(2) + "s";
+    for (let i = 0; i < 20; i++) {
+      const d = document.createElement("span");
+      d.textContent = String(i % 10);
+      band.appendChild(d);
+    }
+    walze.appendChild(band);
+    ziel.appendChild(walze);
+    stelle++;
+  }
+}
+
+async function rechenAnimationZeigen() {
+  const o = document.getElementById("rechnet-overlay");
+  if (!o || !o.hidden) return;
+  zaehlwerkAufbauen();
+  o.hidden = false;
+  // Kurz warten, bis das Overlay gezeichnet ist, bevor Python den Browser blockiert -
+  // sonst erschiene es erst, wenn die Berechnung schon vorbei ist. Bewusst ohne
+  // Einblend-Effekt: der koennte halbfertig stehen bleiben.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise((r) => setTimeout(r, 100));
+}
+
+function rechenAnimationVerbergen() {
+  const o = document.getElementById("rechnet-overlay");
+  if (o) o.hidden = true;
+}
+
 async function berechnen() {
+  await rechenAnimationZeigen();
+  try {
+    await berechnenOhneAnimation();
+  } finally {
+    rechenAnimationVerbergen();
+  }
+}
+
+async function berechnenOhneAnimation() {
   const L = letzterLauf;
   const manuellArg = Object.keys(manuelleZuordnung).length
     ? JSON.stringify(manuelleZuordnung) : "None";

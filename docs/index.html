@@ -99,6 +99,31 @@
     <div id="result" class="panel" style="display:none;"></div>
     <div id="error" class="status-box error" style="display:none;"></div>
 
+    <!-- Rechen-Animation. Laeuft rein ueber CSS: Waehrend Python rechnet, ist der
+         Browser fuer Skripte blockiert - CSS-Animationen (transform/opacity) zeichnet
+         er trotzdem weiter. Die Schritte sind Platzhalter, kein echter Fortschritt. -->
+    <div id="rechnet-overlay" class="rechnet-overlay" hidden>
+      <div class="rechnet-karte" role="status" aria-live="polite">
+        <img class="rechnet-logo" src="assets/perforator-logo.png" alt="">
+        <h2>Spartenrechnung wird erstellt</h2>
+        <div class="zaehlwerk" id="zaehlwerk" aria-hidden="true"></div>
+        <ul class="rechnet-schritte" style="--n:10" aria-hidden="true">
+        <li style="--i:0">KPTM-Buchungen einlesen</li>
+        <li style="--i:1">Kostenarten den GuV-Zeilen zuordnen</li>
+        <li style="--i:2">Produktgruppen in die neue Struktur umschlüsseln</li>
+        <li style="--i:3">Wertsummen je Sparte summieren</li>
+        <li style="--i:4">Deckungsdifferenzen übernehmen</li>
+        <li style="--i:5">Werkstattbestand den Sparten zuordnen</li>
+        <li style="--i:6">Bestandsveränderung unfertige Erzeugnisse berechnen</li>
+        <li style="--i:7">Deckungsbeiträge I bis III bilden</li>
+        <li style="--i:8">Mit der Buchhaltung abstimmen</li>
+        <li style="--i:9">Excel-Datei mit Formeln schreiben</li>
+        </ul>
+        <div class="rechnet-balken" aria-hidden="true"><span></span></div>
+        <p class="rechnet-hinweis">Läuft lokal im Browser – meist 20 bis 60 Sekunden.</p>
+      </div>
+    </div>
+
     <footer>
       <p>Quelle &amp; Dokumentation: <a href="https://github.com/nikolausridder1301/spartenrechner">github.com/nikolausridder1301/spartenrechner</a></p>
     </footer>

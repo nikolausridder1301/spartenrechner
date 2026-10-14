@@ -451,3 +451,134 @@ footer a { color: var(--accent); }
   .panel { padding: 1rem; }
   .app-header { flex-direction: column; align-items: flex-start; position: static; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Rechen-Animation (Overlay waehrend der Berechnung)
+   Nur transform und opacity: Diese Animationen laufen im Browser getrennt vom
+   Skript weiter - auch dann, wenn Python die Seite gerade blockiert.
+   --------------------------------------------------------------------------- */
+.rechnet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(22, 27, 38, 0.45);
+  backdrop-filter: blur(3px);
+}
+.rechnet-overlay[hidden] { display: none; }
+
+.rechnet-karte {
+  width: min(440px, 100%);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: 0 24px 60px rgba(22, 27, 38, 0.25);
+  padding: 1.75rem 1.75rem 1.4rem;
+  text-align: center;
+}
+.rechnet-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  animation: logo-puls 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+.rechnet-karte h2 {
+  margin: 0.6rem 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Zaehlwerk: jede Ziffer ist ein Band 0-9-0-9, das in Zehnerschritten rollt. */
+.zaehlwerk {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  font-family: var(--font-mono);
+  font-size: 1.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.8rem;
+  line-height: 1;
+}
+.zaehlwerk .walze {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+}
+.zaehlwerk .band {
+  display: flex;
+  flex-direction: column;
+  animation: walze var(--dauer) steps(10) infinite;
+  will-change: transform;
+}
+.zaehlwerk .band span { height: 1em; }
+.zaehlwerk .zeichen { color: var(--text-muted); }
+
+/* Arbeitsschritte: liegen uebereinander, jeder blendet zu seiner Zeit ein. */
+.rechnet-schritte {
+  position: relative;
+  list-style: none;
+  margin: 1.1rem 0 0.9rem;
+  padding: 0;
+  height: 1.4rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.rechnet-schritte li {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: schritt calc(var(--n) * 2.2s) linear infinite both;
+  animation-delay: calc(var(--i) * 2.2s);
+  will-change: transform, opacity;
+}
+.rechnet-schritte li::before { content: "▸ "; color: var(--accent); }
+
+.rechnet-balken {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.rechnet-balken span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: balken 1.4s ease-in-out infinite;
+  will-change: transform;
+}
+.rechnet-hinweis {
+  margin: 0.9rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+@keyframes logo-puls { 50% { transform: scale(1.06) rotate(-4deg); } }
+@keyframes walze { to { transform: translateY(-50%); } }
+@keyframes balken {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(310%); }
+}
+@keyframes schritt {
+  0%   { opacity: 0; transform: translateY(8px); }
+  2%   { opacity: 1; transform: none; }
+  8.5% { opacity: 1; transform: none; }
+  10%  { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+/* Reduzierte Bewegung: ruhige Fassung - erster Schritt stehend, Balken langsam. */
+@media (prefers-reduced-motion: reduce) {
+  .rechnet-logo, .zaehlwerk .band, .rechnet-schritte li { animation: none; }
+  .rechnet-schritte li:first-child { opacity: 1; }
+  .rechnet-balken span { animation-duration: 4s; }
+}
