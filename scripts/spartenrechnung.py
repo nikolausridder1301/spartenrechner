@@ -34,6 +34,13 @@ def find_kptm_file(rohdaten_dir):
     return candidates[0]
 
 
+def find_susa_file(rohdaten_dir):
+    """Summen- und Saldenliste der FiBu im Rohdaten-Ordner (optional)."""
+    treffer = sorted(glob.glob(os.path.join(rohdaten_dir, "SuSa*.csv"))
+                     + glob.glob(os.path.join(rohdaten_dir, "SuSa*.xls*")))
+    return treffer[0] if treffer else None
+
+
 def find_kostentraeger_file(rohdaten_dir):
     """Die Kostentraeger-Auswertung der Buchhaltung, falls im Ordner abgelegt."""
     treffer = [p for p in glob.glob(os.path.join(rohdaten_dir, "Kosten*r*ger*.xls*"))
@@ -59,6 +66,10 @@ def main():
                     help="Kostentraeger-Auswertung der Buchhaltung (Penta, Objekttyp Kostentraeger) "
                          "fuer die drei Deckungsdifferenzen. Ohne Angabe wird im Rohdaten-Ordner "
                          "nach 'Kostentraeger*.xls' gesucht.")
+    ap.add_argument("--susa",
+                    help="Summen- und Saldenliste der FiBu fuer die Abstimmung (Erloese, "
+                         "Werkstattbestand). Ohne Angabe wird im Rohdaten-Ordner nach "
+                         "'SuSa*.csv' gesucht.")
     args = ap.parse_args()
 
     kptm_path = find_kptm_file(args.rohdaten)
@@ -74,6 +85,7 @@ def main():
         bwa_path=args.bwa, bwa_sheet=args.bwa_sheet,
         pwbs_anfang=args.pwbs_anfang, pwbs_ende=args.pwbs_ende, pfak_pfade=args.pfak,
         kostentraeger_pfad=args.kostentraeger or find_kostentraeger_file(args.rohdaten),
+        susa_pfad=args.susa or find_susa_file(args.rohdaten),
     )
 
     print(f"{summary['zeilen']} Zeilen geladen. Zeitraum: {summary['zeitraum']}")
@@ -106,6 +118,16 @@ def main():
     elif st:
         print(f"Neue Produktgruppen-Struktur: {st['zeilen']} Buchungszeilen umgeschluesselt, "
               f"{summary.get('naeherung_zellen', 0)} Zellen als Naeherung (gelb).")
+    if summary.get("abstimmung"):
+        print("Abstimmung mit der Buchhaltung:")
+        zeichen = {"ok": "OK  ", "hinweis": "INFO", "abweichung": "PRUEFEN"}
+        for p in summary["abstimmung"]:
+            print(f"  [{zeichen[p['status']]}] {p['bereich']}: {p['text']}")
+            for d in (p["details"] if p["status"] != "ok" else [])[:6]:
+                print(f"           {d}")
+    if not summary.get("susa_geladen"):
+        print("HINWEIS: Keine Summen- und Saldenliste - die Abstimmung mit der FiBu entfaellt.",
+              file=sys.stderr)
     dd = summary.get("deckungsdifferenzen") or {}
     if dd.get("geladen"):
         print("Deckungsdifferenzen aus der Kostentraeger-Auswertung uebernommen.")

@@ -8,7 +8,7 @@ Datei `KPTM_Wertsummen_*.xls`).
 
 **[→ Spartenrechner öffnen](https://nikolausridder1301.github.io/spartenrechner/)**
 
-Dateien per Drag & Drop hochladen (KPTM-Rohdaten, Kostenträger-Auswertung, Werkstattbestand),
+Dateien per Drag & Drop hochladen (KPTM-Rohdaten, Kostenträger-Auswertung, SuSa, Werkstattbestand),
 "Spartenrechnung erstellen" klicken – fertige Excel-Datei zum
 Download. Genau wie ein klassischer Online-Dateikonverter, mit einem
 entscheidenden Unterschied: **es wird nichts hochgeladen.** Die komplette
@@ -103,7 +103,33 @@ Hochzuladen sind drei Dateien plus – einmal im Jahr – der Anfangsbestand:
 |---|---|
 | `KPTM_Wertsummen_*.xls` | SQL-Abfrage ans ERP, kumuliert seit Jahresbeginn |
 | Kostenträger-Auswertung | Buchhaltung, nach dem Monatsabschluss gezogen |
+| SuSa (Summen- und Saldenliste) | Buchhaltung, gleicher Zeitraum – nur für die Abstimmung |
 | `PWBS_Werkstattbestand_*.xls` **mit Spalte Produktgruppe** | Buchhaltung, **am Stichtag** gezogen |
+
+### Abstimmung mit der Buchhaltung – Prüfung ohne Referenzrechnung
+
+Eine manuelle Referenzrechnung gibt es nur für Q1 2026. Damit auch jede spätere
+Rechnung geprüft ist, hält das Tool sein Ergebnis gegen zwei Quellen, die
+**unabhängig vom KPTM-Export** entstehen, und zeigt das Ergebnis im Browser sowie im
+Blatt „Abstimmung" der Excel-Datei:
+
+1. **Kostenträger-Auswertung:** Aus ihr wird jede Zeile (Erlöse, FE, Material,
+   Fremdleistungen, sbA, FEK, MGK, VVGK) je Sparte ein zweites Mal gerechnet.
+   Abweichungen unter 1 % gelten als Buchungsstand. Geeicht an Q1 2026: Sie zeigt
+   dort genau die Abweichungen, die auch die Referenzrechnung zeigt.
+2. **SuSa:** Erlöse gesamt gegen alle Erlöskonten der FiBu (auch solche, die das
+   Mapping noch nicht kennt), Werkstattbestand zum Stichtag gegen die Bilanzkonten
+   1040000 + 1041000, und der hinterlegte Anfangsbestand gegen die FiBu zum 01.01.
+
+Material und Fremdleistungen sind gegen die FiBu bewusst nicht abgestimmt – die
+Kostenrechnung bewertet anders, die Differenz ist strukturell. Die
+Kostenstellen-Auswertung wird nicht gebraucht: Die Kostenstellen sind nach der
+Umlage nicht auf null abgerechnet, eine Abstimmung daraus wäre Interpretation.
+
+Zusätzlich lehnt das Tool Dateien aus dem falschen Zeitraum ab: Kostenträger-
+Auswertung und SuSa müssen denselben Zeitraum abdecken wie der KPTM-Export, der
+Werkstattbestand den passenden Stichtag tragen (Dateiname, z.B. `..._011026` für
+Jan–Sep).
 
 ### Werkstattbestand: mit Produktgruppe, am Stichtag
 

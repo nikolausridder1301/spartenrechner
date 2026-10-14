@@ -1562,7 +1562,7 @@ def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
                  stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None,
                  ufe_warnungen=None, zeilen_klasse=None, deckungsdifferenzen=None,
-                 naeherung_zellen=None, struktur=None):
+                 naeherung_zellen=None, struktur=None, abstimmung=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -1860,6 +1860,9 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
         ws2.cell(row=i, column=1, value=line)
     ws2.column_dimensions["A"].width = 140
 
+    if abstimmung:
+        _abstimmung_blatt(wb, abstimmung, zeitraum)
+
     # Rohdaten und Formeln anhaengen, damit jede Zahl rueckverfolgbar ist.
     # Schlaegt das fehl, bleibt die Datei mit den reinen Werten erhalten - die
     # Nachvollziehbarkeit ist ein Zusatz, kein Grund, das Ergebnis zu verlieren.
@@ -1942,9 +1945,248 @@ def deckungsdifferenzen_einsetzen(result, kostentraeger_pfad, mapping, kptm_df, 
     return neu_berechnen(result), befund
 
 
+# ---------------------------------------------------------------------------
+# Abstimmung mit der Buchhaltung
+# ---------------------------------------------------------------------------
+# Eine Referenzrechnung gibt es nur fuer Q1 2026. Damit auch jede kuenftige Rechnung
+# geprueft ist, stimmt sich das Tool selbst gegen zwei Quellen ab, die UNABHAENGIG vom
+# KPTM-Export entstehen:
+#   1. die Kostentraeger-Auswertung (Kostentraegerrechnung der Buchhaltung) - daraus
+#      wird jede Zeile je Sparte ein zweites Mal gerechnet;
+#   2. die Summen- und Saldenliste der FiBu - Erloese, Werkstattbestand, UFE.
+# Geeicht an Q1 2026: Die Kostentraeger-Auswertung zeigt dort genau die Abweichungen,
+# die auch die Referenz zeigt (Buchungsstand des KPTM) - sie taugt also als Referenz.
+# Material und Fremdleistungen sind gegen die FiBu NICHT abstimmbar: die Kostenrechnung
+# bewertet anders (strukturelle Differenz) - deshalb wird das gar nicht erst versucht.
+
+def _de(betrag, vorzeichen=False):
+    """Betrag im deutschen Format (1.234,56) - die Texte erscheinen so im Browser."""
+    text = f"{float(betrag):{'+' if vorzeichen else ''},.2f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+ABSTIMMUNG_KT_ZEILEN = ["erloese", "bestand_fe", "material", "fremdleistungen", "sba",
+                        "fek", "mgk", "vvgk"]
+# Konten der unfertigen Erzeugnisse in der FiBu (Bilanz).
+UFE_KONTEN = ["1040000", "1041000"]
+
+
+def _pruefung(bereich, text, status, soll=None, ist=None, details=None):
+    return {"bereich": bereich, "text": text, "status": status,
+            "soll": None if soll is None else round(float(soll), 2),
+            "ist": None if ist is None else round(float(ist), 2),
+            "delta": None if soll is None or ist is None else round(float(ist) - float(soll), 2),
+            "details": details or []}
+
+
+def abstimmung_kostentraeger(kptm_df, kostentraeger_pfad, mapping, pg_config):
+    """Zweite Rechnung aus der Kostentraeger-Auswertung, Zeile fuer Zeile je Sparte.
+
+    Verglichen wird in der GEBUCHTEN Struktur: die Kostentraeger-Auswertung kennt die
+    Umschluesselung nicht. Toleranz wie in der Validierung gegen die Referenz:
+    unter 1 % bzw. 1 EUR gilt als Buchungsstand (die beiden Auswertungen werden nicht
+    in derselben Sekunde gezogen), alles darueber als Abweichung.
+    """
+    df = kptm_df
+    if "Produktgruppe (gebucht)" in df.columns:
+        df = df.copy()
+        df["Produktgruppe"] = df["Produktgruppe (gebucht)"]
+    r_kptm, sparten, _, _, _ = build_spartenrechnung(df, mapping, pg_config)
+
+    kt = pd.read_excel(kostentraeger_pfad, sheet_name="Penta")
+    kt.columns = [str(c).strip() for c in kt.columns]
+    kt = kt[~kt["Kostenart"].astype(str).str.strip().str.startswith("U")].copy()
+    kt["Kostenart"] = kt["Kostenart"].astype(str).str.strip()
+    kt["Produktgruppe"] = kt["Kostenobjekt"].map(_schluessel)
+    if "Wertart" not in kt.columns:
+        kt["Wertart"] = mapping.get("kostenstellen_wertart", "ISWF")
+    r_kt, _, _, _, _ = build_spartenrechnung(kt, mapping, pg_config)
+
+    spalten = sorted({p for p in list(r_kptm.columns) + list(r_kt.columns)
+                      if p != "Summe" and _ist_sparte(p)})
+    pruefungen = []
+    for zeile in ABSTIMMUNG_KT_ZEILEN:
+        exakt = nah = 0
+        ab = []
+        for p in spalten:
+            x = float(r_kptm.loc[zeile, p]) if p in r_kptm.columns else 0.0
+            y = float(r_kt.loc[zeile, p]) if p in r_kt.columns else 0.0
+            if abs(x) < 0.005 and abs(y) < 0.005:
+                continue
+            d = x - y
+            if abs(d) < 0.005:
+                exakt += 1
+            elif abs(d) < max(1.0, abs(y) * 0.01):
+                nah += 1
+            else:
+                ab.append(f"{p}: Tool {_de(x)} / Kostentraeger {_de(y)} (Δ {_de(d, True)})")
+        summe_x = float(sum(r_kptm.loc[zeile, p] for p in spalten if p in r_kptm.columns))
+        summe_y = float(sum(r_kt.loc[zeile, p] for p in spalten if p in r_kt.columns))
+        text = (f"{mapping['zeilen_labels'].get(zeile, zeile)}: {exakt} Sparten centgenau"
+                + (f", {nah} im Rundungsbereich (Buchungsstand)" if nah else ""))
+        if ab:
+            text += f", {len(ab)} weichen ab"
+        pruefungen.append(_pruefung("Kostentraeger-Auswertung", text,
+                                    "abweichung" if ab else "ok", summe_y, summe_x, ab))
+    return pruefungen
+
+
+def lade_susa(pfad):
+    """Summen- und Saldenliste der FiBu (CSV mit ';' und deutschen Zahlen, oder Excel).
+    Liefert (DataFrame mit Index Kontonummer, Spalten anfang/saldo/beschreibung, bis-Datum)."""
+    name = os.path.basename(str(pfad))
+    try:
+        if str(pfad).lower().endswith(".csv"):
+            roh = pd.read_csv(pfad, sep=";", dtype=str, encoding="utf-8-sig")
+        else:
+            roh = pd.read_excel(pfad, dtype=str)
+    except Exception as e:
+        raise ValueError(f"'{name}' ist keine lesbare Summen- und Saldenliste ({e}).")
+    roh.columns = [str(c).strip() for c in roh.columns]
+    noetig = ["Code", "Anf.-Saldo", "Saldo"]
+    if not all(sp in roh.columns for sp in noetig):
+        raise ValueError(
+            f"'{name}' sieht nicht wie eine Summen- und Saldenliste (SuSa) aus - es fehlen die "
+            f"Spalten {', '.join(sp for sp in noetig if sp not in roh.columns)}. Erwartet wird "
+            f"der SuSa-Export der FiBu (z.B. 'SuSa 01-09.2026.csv').")
+
+    def zahl(s):
+        return pd.to_numeric(s.astype(str).str.strip().str.replace(".", "", regex=False)
+                             .str.replace(",", ".", regex=False), errors="coerce").fillna(0.0)
+
+    df = pd.DataFrame({
+        "konto": roh["Code"].map(_schluessel),
+        "beschreibung": roh.get("Beschreibung", pd.Series([""] * len(roh))).fillna(""),
+        "anfang": zahl(roh["Anf.-Saldo"]),
+        "saldo": zahl(roh["Saldo"]),
+    }).dropna(subset=["konto"]).set_index("konto")
+    bis = None
+    if "Jahr bis" in roh.columns:
+        bis = pd.to_datetime(roh["Jahr bis"].dropna().iloc[0], dayfirst=True,
+                             errors="coerce") if roh["Jahr bis"].notna().any() else None
+    return df, bis
+
+
+def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_berechnet):
+    """FiBu-Abstimmung: Erloese, Werkstattbestand zum Stichtag, Bestandsveraenderung UFE."""
+    import datetime
+    susa, bis = lade_susa(susa_pfad)
+    name = os.path.basename(str(susa_pfad))
+
+    # Gleicher Zeitraum wie der KPTM-Export? Sonst ist jede Abstimmung wertlos.
+    spanne = _perioden_aus_daten(kptm_df)
+    if spanne and bis is not None and not pd.isna(bis):
+        _, b, _, j = spanne
+        ende = (datetime.date(j + 1, 1, 1) if b == 12 else datetime.date(j, b + 1, 1)) \
+            - datetime.timedelta(days=1)
+        if bis.date() != ende:
+            raise ValueError(
+                f"Die Summen- und Saldenliste '{name}' reicht bis {bis:%d.%m.%Y}, der "
+                f"KPTM-Export bis {ende:%d.%m.%Y}. Beide muessen denselben Zeitraum abdecken.")
+
+    pruefungen = []
+    # 1. Erloese: alle Konten, die das Mapping als Erloes kennt, PLUS jedes weitere
+    #    44er-Konto der FiBu. So faellt ein neues Erloeskonto auf, das das Mapping
+    #    noch nicht kennt (z.B. 4480000 Erloese Schneidrollen, erstmals 09/2026).
+    kz = mapping["kostenart_zu_zeile"]
+    erloes_konten = {k for k, v in kz.items() if v["zeile"] == "erloese"}
+    erloes_konten |= {k for k in susa.index if k.startswith("44")}
+    fibu = -float(susa.loc[susa.index.isin(erloes_konten), "saldo"].sum())
+    tool = float(result.loc["erloese", "Summe"])
+    fehlend = sorted(k for k in erloes_konten if k in susa.index and k not in kz
+                     and abs(susa.loc[k, "saldo"]) > 0.005)
+    details = [f"{k} {susa.loc[k, 'beschreibung']}: {_de(-susa.loc[k, 'saldo'])} - Konto fehlt "
+               f"im Mapping" for k in fehlend]
+    pruefungen.append(_pruefung(
+        "FiBu (SuSa)", "Erloese gesamt = Erloeskonten der FiBu",
+        "ok" if abs(tool - fibu) < 1.0 else "abweichung", fibu, tool, details))
+
+    # 2. Werkstattbestand zum Stichtag = Bilanzkonten der unfertigen Erzeugnisse.
+    #    Faengt einen Werkstattbestand mit falschem Stichtag ebenso ab wie einen, der
+    #    nachtraeglich gezogen wurde (dessen Werte stimmen nicht mehr mit der FiBu).
+    st = ufe_statistik or {}
+    if st:
+        fibu_ende = float(susa.loc[susa.index.isin(UFE_KONTEN), "saldo"].sum())
+        fibu_anfang = float(susa.loc[susa.index.isin(UFE_KONTEN), "anfang"].sum())
+        pwbs = float(st.get("zugeordnet", 0.0)) + float(st.get("offen", 0.0))
+        pruefungen.append(_pruefung(
+            "FiBu (SuSa)",
+            "Werkstattbestand zum Stichtag (ohne Serviceauftraege) = FiBu-Konten "
+            + " + ".join(UFE_KONTEN),
+            "ok" if abs(pwbs - fibu_ende) < 1.0 else "abweichung", fibu_ende, pwbs,
+            [] if abs(pwbs - fibu_ende) < 1.0 else [
+                "Haeufigste Ursachen: Werkstattbestand nicht am Stichtag gezogen (spaeter "
+                "gezogene Exporte zeigen den heutigen Stand), oder Stichtag passt nicht "
+                "zum Zeitraum."]))
+
+        # 3. Der Anfangsbestand ist der einzige Wert der UFE-Zeile, der nicht aus einer
+        #    Datei des Zeitraums kommt, sondern hinterlegt ist. Er wird gegen die FiBu
+        #    zum 01.01. gehalten. Ein Unterschied ist kein Fehler an sich (der hinterlegte
+        #    Wert kann Bestand ohne Sparte bewusst auslassen), aber er muss bekannt und
+        #    ueber das Jahr konstant sein - und er erklaert, um wie viel die UFE-Summe der
+        #    Sparten von der Buchung der FiBu abweicht.
+        if ufe_berechnet:
+            sparten = [c for c in result.columns if c != "Summe"]
+            ufe_tool = float(result.loc["bestand_ufe", sparten].sum())
+            fibu_bewegung = fibu_ende - fibu_anfang
+            offen = float(st.get("offen", 0.0))
+            ab_tool = float(st.get("zugeordnet", 0.0)) - ufe_tool
+            ab_delta = fibu_anfang - ab_tool
+            details = [
+                f"Bestandsveraenderung UFE: Summe der Sparten {_de(ufe_tool)}, Buchung der "
+                f"FiBu {_de(fibu_bewegung)} (Δ {_de(ufe_tool - fibu_bewegung, True)}).",
+                f"Der Unterschied setzt sich zusammen aus dem Anfangsbestand-Unterschied "
+                f"({_de(ab_delta, True)}) und dem nicht zuordenbaren Werkstattbestand ({_de(offen)}).",
+            ]
+            if abs(ab_delta) >= 1.0:
+                details.append(
+                    "Der hinterlegte Anfangsbestand weicht von der FiBu zum 01.01. ab. Ist der "
+                    "Unterschied jeden Monat derselbe, ist das bekannter Bestand ohne Sparte; "
+                    "aendert er sich, wurden die Betriebsparameter veraendert.")
+            pruefungen.append(_pruefung(
+                "FiBu (SuSa)", "Anfangsbestand (hinterlegt) = FiBu-Konten zum 01.01.",
+                "ok" if abs(ab_delta) < 1.0 else "hinweis", fibu_anfang, ab_tool, details))
+    return pruefungen
+
+
+def _abstimmung_blatt(wb, pruefungen, zeitraum):
+    """Blatt 'Abstimmung': die Pruefungen gegen die Buchhaltung, fuer jeden Leser der Datei."""
+    ws = wb.create_sheet("Abstimmung", 1)
+    ws.cell(row=1, column=1, value=f"Abstimmung mit der Buchhaltung – {zeitraum}").font = Font(
+        bold=True, size=12)
+    ws.cell(row=2, column=1, value=(
+        "Das Tool rechnet aus dem KPTM-Export. Hier wird das Ergebnis gegen zwei Quellen "
+        "gehalten, die unabhaengig davon entstehen: die Kostentraeger-Auswertung (zweite "
+        "Rechnung je Sparte) und die Summen- und Saldenliste der FiBu.")).font = Font(
+        italic=True, size=9)
+    kopf = ["Quelle", "Pruefung", "Status", "Buchhaltung", "Tool", "Δ"]
+    for j, t in enumerate(kopf, start=1):
+        z = ws.cell(row=4, column=j, value=t)
+        z.fill, z.font = FILL_HEADER, FONT_HEADER
+    r = 5
+    status_text = {"ok": "✓ stimmt", "hinweis": "ℹ Hinweis", "abweichung": "⚠ pruefen"}
+    status_fill = {"ok": FILL_AUTO, "hinweis": FILL_AUTO_PRUEF, "abweichung": FILL_MANUAL}
+    for p in pruefungen:
+        werte = [p["bereich"], p["text"], status_text[p["status"]],
+                 p["soll"], p["ist"], p["delta"]]
+        for j, w in enumerate(werte, start=1):
+            z = ws.cell(row=r, column=j, value=w)
+            z.border = BORDER
+            if j >= 4:
+                z.number_format = "#,##0.00"
+            if j == 3:
+                z.fill = status_fill[p["status"]]
+        r += 1
+        for d in p["details"][:12]:
+            ws.cell(row=r, column=2, value="   " + d).font = Font(size=9, color="555555")
+            r += 1
+    for sp, b in (("A", 24), ("B", 90), ("C", 12), ("D", 16), ("E", 16), ("F", 12)):
+        ws.column_dimensions[sp].width = b
+
+
 def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_sheet=None,
              pwbs_anfang=None, pwbs_ende=None, pfak_pfade=None, manuelle_zuordnung=None,
-             kostentraeger_pfad=None):
+             kostentraeger_pfad=None, susa_pfad=None):
     """Ein-Funktions-Einstieg fuer die Weboberflaeche: liest KPTM (+optional BWA,
     +optional Werkstattbestand fuer die Bestandsveraenderung UFE), berechnet die
     Spartenrechnung und schreibt die Ausgabedatei. Gibt eine kurze Zusammenfassung
@@ -2046,6 +2288,15 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
     if bwa_path and bwa_sheet:
         bwa_ergebnis = read_bwa_ergebnis(bwa_path, bwa_sheet)
 
+    # Abstimmung mit der Buchhaltung - damit auch ohne Referenzrechnung jede Rechnung
+    # gegen unabhaengige Quellen geprueft ist (siehe abstimmung_kostentraeger/_susa).
+    abstimmung = []
+    if kostentraeger_pfad:
+        abstimmung += abstimmung_kostentraeger(df, kostentraeger_pfad, mapping, pg_config)
+    if susa_pfad:
+        abstimmung += abstimmung_susa(susa_pfad, df, mapping, result, ufe_statistik,
+                                      bool(pwbs_ende and not ufe_warnungen))
+
     saetze, satz_hinweise = zuschlagssaetze(result, mapping)
     unprod_betrag, unprod_stunden = unproduktive_gemeinkosten(df, mapping)
     stunden_df = fertigungsstunden(df, mapping)
@@ -2057,6 +2308,7 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
                  deckungsdifferenzen=dd_befund,
                  naeherung_zellen=naeherung_zellen,
                  struktur=struktur,
+                 abstimmung=abstimmung,
                  herleitung={
                      "kostentraeger": ({"umlage": dd_befund["umlage_df"],
                                         "zeilen_gesamt": dd_befund["zeilen_gesamt"]}
@@ -2109,6 +2361,8 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         },
         "struktur": ({k: v for k, v in struktur.items() if k != "paare"} if struktur else None),
         "naeherung_zellen": len(naeherung_zellen),
+        "abstimmung": abstimmung,
+        "susa_geladen": bool(susa_pfad),
         "db3_summe": float(result.loc["db3", "Summe"]),
         "erloese_summe": float(result.loc["erloese", "Summe"]),
     }

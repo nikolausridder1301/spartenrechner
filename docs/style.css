@@ -161,6 +161,9 @@ input[type="text"]:focus, select:focus, .dropzone:focus-visible {
 }
 
 .dropzone {
+  /* Lange Dateinamen ohne Leerzeichen (PWBS_Werkstattbestand_..._Produktgruppe.xls)
+     umbrechen statt die Seite seitlich zu verbreitern. */
+  overflow-wrap: anywhere;
   border: 1px dashed var(--border);
   border-radius: var(--radius-card);
   padding: 1.5rem 1rem;
@@ -379,6 +382,12 @@ button[type="submit"]:disabled { background: #a9b0bd; cursor: not-allowed; }
 }
 
 .zuordnung[open] > summary { margin-bottom: 0.75rem; }
+
+/* Auf schmalen Bildschirmen umbrechen die Zellen, statt die Seite zu verbreitern. */
+.zuordnung-tabelle th,
+.zuordnung-tabelle td {
+  overflow-wrap: anywhere;
+}
 
 .zuordnung-tabelle {
   width: 100%;

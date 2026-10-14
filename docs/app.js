@@ -11,6 +11,7 @@ const errorBox = document.getElementById("error");
 let pyodide = null;
 let kptmFile = null;
 let kostentraegerFile = null;
+let susaFile = null;
 let pwbsAnfangFile = null;
 let pwbsEndeFile = null;
 
@@ -40,6 +41,12 @@ setupDropzone("dropzone-kptm", "dropzone-kptm-text", "file-kptm", (file, zone, t
 
 setupDropzone("dropzone-kt", "dropzone-kt-text", "file-kt", (file, zone, text) => {
   kostentraegerFile = file;
+  zone.classList.add("has-file");
+  text.textContent = "✓ " + file.name;
+});
+
+setupDropzone("dropzone-susa", "dropzone-susa-text", "file-susa", (file, zone, text) => {
+  susaFile = file;
   zone.classList.add("has-file");
   text.textContent = "✓ " + file.name;
 });
@@ -76,6 +83,20 @@ const INFO_TEXTE = {
     <strong>Warum</strong>Daraus kommen die FEK-, MGK- und VVGK-Deckungsdifferenz je Sparte &ndash;
     der Unterschied zwischen kalkulierten und tats&auml;chlichen Gemeinkosten. Ohne sie fehlen
     DB&nbsp;I bis DB&nbsp;III.`,
+  "susa": `<strong>Woher</strong>Von der Buchhaltung: die Summen- und Saldenliste der FiBu
+    (z.&nbsp;B. &bdquo;SuSa 01-09.2026.csv&ldquo;) f&uuml;r denselben Zeitraum &ndash; sie kommt
+    zusammen mit der Kostentr&auml;ger-Auswertung.
+    <strong>Was</strong>Anfangs- und Endsaldo jedes Sachkontos.
+    <strong>Warum</strong>Zur Abstimmung: Das Tool pr&uuml;ft damit, ob die Erl&ouml;se mit der FiBu
+    &uuml;bereinstimmen und ob der Werkstattbestand dem Bilanzwert entspricht (richtiger
+    Stichtag, vollst&auml;ndige Datei). In die Rechnung selbst flie&szlig;t sie nicht ein.`,
+  "abstimmung": `<strong>Was ist es</strong>Eine Gegenprobe ohne Referenzrechnung: Das Ergebnis wird
+    gegen zwei Quellen der Buchhaltung gehalten, die unabh&auml;ngig vom KPTM-Export entstehen.
+    <strong>Berechnung</strong>(1) Aus der Kostentr&auml;ger-Auswertung wird jede Zeile je Sparte ein
+    zweites Mal gerechnet &ndash; Abweichungen unter 1&nbsp;% sind Buchungsstand. (2) Gegen die SuSa:
+    Erl&ouml;se gesamt, Werkstattbestand zum Stichtag (Konten 1040000 + 1041000) und der hinterlegte
+    Anfangsbestand. Material und Fremdleistungen sind gegen die FiBu nicht abstimmbar, weil die
+    Kostenrechnung anders bewertet.`,
   "pwbs-ende": `<strong>Woher</strong>Von der Buchhaltung: ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;
     in der Form <em>mit Spalte Produktgruppe</em>, gezogen <em>am</em> Stichtag (erster Tag nach
     dem Auswertungszeitraum) &ndash; nicht nachtr&auml;glich, sonst stimmen die Werte nicht mehr.
@@ -411,6 +432,10 @@ form.addEventListener("submit", async (e) => {
     showError("Bitte die Kostenträger-Auswertung der Buchhaltung auswählen.");
     return;
   }
+  if (!susaFile) {
+    showError("Bitte die Summen- und Saldenliste (SuSa) der Buchhaltung auswählen – sie wird für die Abstimmung gebraucht.");
+    return;
+  }
   if (!pwbsEndeFile) {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
     return;
@@ -426,6 +451,7 @@ form.addEventListener("submit", async (e) => {
     // KPTM-Namen laesst sich notfalls der Zeitraum lesen.
     const kptmPfad = await ablegen("/kptm", kptmFile);
     const ktPfad = await ablegen("/kostentraeger", kostentraegerFile);
+    const susaPfad = await ablegen("/susa", susaFile);
 
     // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
     // Der Anfangsbestand kommt aus der hinterlegten Jahreskonstante, eine PWBS-Datei
@@ -440,7 +466,7 @@ form.addEventListener("submit", async (e) => {
       pwbsAArg = JSON.stringify(await ablegen("/pwbs_anfang", pwbsAnfangFile));
     }
 
-    letzterLauf = { kptmPfad, ktPfad, pwbsAArg, pwbsEArg, pfakArg };
+    letzterLauf = { kptmPfad, ktPfad, susaPfad, pwbsAArg, pwbsEArg, pfakArg };
     manuelleZuordnung = {};   // neuer Lauf mit neuen Dateien: alte Zuordnungen verwerfen
     await berechnen();
   } catch (err) {
@@ -470,6 +496,7 @@ summary = spartenrechnung_core.generate(
     pwbs_anfang=${L.pwbsAArg}, pwbs_ende=${L.pwbsEArg}, pfak_pfade=${L.pfakArg},
     manuelle_zuordnung=${manuellArg},
     kostentraeger_pfad=${JSON.stringify(L.ktPfad)},
+    susa_pfad=${JSON.stringify(L.susaPfad)},
 )
 json.dumps(summary)
   `);
@@ -517,6 +544,27 @@ function showResult(summary, url, filename) {
     const std = summary.unproduktive_stunden.toLocaleString("de-DE", {maximumFractionDigits: 0});
     html += summaryZeile(`Nicht auf Kostenträger gebuchte Stunden (${std} h)`,
       eurF(summary.unproduktive_gemeinkosten) + " €", "unproduktiv");
+  }
+
+  // Abstimmung mit der Buchhaltung - oben, weil sie sagt, ob man den Zahlen trauen kann.
+  const abst = summary.abstimmung || [];
+  if (abst.length) {
+    const nOk = abst.filter((p) => p.status === "ok").length;
+    const zeichen = { ok: "✓", hinweis: "ℹ️", abweichung: "⚠️" };
+    html += `<h2 style="margin-top:1.5rem">Abstimmung mit der Buchhaltung
+      <span class="info-icon" tabindex="0" role="button" data-info="abstimmung"
+        aria-label="Erklärung: Abstimmung">?</span></h2>`;
+    html += summaryZeile("Prüfungen bestanden", `${nOk} von ${abst.length}`, null, true);
+    for (const p of abst) {
+      const kurz = p.text.length > 90 ? p.text.slice(0, 88) + "…" : p.text;
+      if (p.status === "ok") {
+        html += `<div class="summary-line"><span>${zeichen.ok} ${kurz}</span><span></span></div>`;
+      } else {
+        html += `<div class="warning-box">${zeichen[p.status]} <strong>${p.bereich}:</strong> ${p.text}`;
+        if (p.details && p.details.length) html += `<br>` + p.details.slice(0, 8).join("<br>");
+        html += `</div>`;
+      }
+    }
   }
 
   const st = summary.struktur;
