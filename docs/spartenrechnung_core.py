@@ -1063,11 +1063,11 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
                          if abs(wert) > 0.005 and pg not in anfang)
     if ohne_anfang:
         hinweise.append(
-            f"Fuer {len(ohne_anfang)} Sparte(n) ist kein Anfangsbestand hinterlegt: "
+            f"Für {len(ohne_anfang)} Sparte(n) ist kein Anfangsbestand hinterlegt: "
             f"{', '.join(ohne_anfang[:6])}{' ...' if len(ohne_anfang) > 6 else ''}. "
-            f"Deren Zeile zeigt deshalb den vollen Endbestand statt der Veraenderung. "
-            f"Richtig ist das nur, wenn die Sparte am 01.01. tatsaechlich keinen "
-            f"Werkstattbestand hatte (z.B. erst danach eingefuehrt)."
+            f"Deren Zeile zeigt deshalb den vollen Endbestand statt der Veränderung. "
+            f"Richtig ist das nur, wenn die Sparte am 01.01. tatsächlich keinen "
+            f"Werkstattbestand hatte (z.B. erst danach eingeführt)."
         )
 
     # Die Prozentschwelle schuetzt die Summe, nicht die einzelne Sparte. Die nicht
@@ -1079,13 +1079,13 @@ def bestandsveraenderung_ufe(pwbs_ende, pfak_pfade=None, anfangsbestand=None, pw
     if betroffen and statistik["offen"] > betroffen[0][0]:
         kleinere = [pg for betrag, pg in betroffen if betrag < statistik["offen"]]
         hinweise.append(
-            f"Die Zuordnungsluecke von {statistik['offen']:,.2f} EUR ist groesser als der "
+            f"Die Zuordnungslücke von {_de(statistik['offen'])} EUR ist größer als der "
             f"ausgewiesene Wert von {len(kleinere)} Sparte(n): {', '.join(kleinere[:6])}"
             f"{' ...' if len(kleinere) > 6 else ''}. Die Quote von "
-            f"{statistik['luecke_quote']:.1%} ist zwar eingehalten, aber sie misst am "
-            f"Gesamtbestand - diese Sparten koennen dennoch vollstaendig falsch sein. "
-            f"Fuer belastbare Werte bei diesen Sparten die groessten offenen Auftraege "
-            f"von Hand zuordnen.", )
+            f"{_de(statistik['luecke_quote'] * 100)[:-1].rstrip(',')} % ist zwar eingehalten, "
+            f"aber sie misst am Gesamtbestand - diese Sparten können dennoch vollständig "
+            f"falsch sein. Für belastbare Werte bei diesen Sparten die größten offenen "
+            f"Aufträge von Hand zuordnen.", )
         statistik["kleiner_als_luecke"] = kleinere
 
     if widersprueche:
@@ -2018,14 +2018,14 @@ def abstimmung_kostentraeger(kptm_df, kostentraeger_pfad, mapping, pg_config):
             elif abs(d) < max(1.0, abs(y) * 0.01):
                 nah += 1
             else:
-                ab.append(f"{p}: Tool {_de(x)} / Kostentraeger {_de(y)} (Δ {_de(d, True)})")
+                ab.append(f"{p}: Tool {_de(x)} / Kostenträger {_de(y)} (Δ {_de(d, True)})")
         summe_x = float(sum(r_kptm.loc[zeile, p] for p in spalten if p in r_kptm.columns))
         summe_y = float(sum(r_kt.loc[zeile, p] for p in spalten if p in r_kt.columns))
         text = (f"{mapping['zeilen_labels'].get(zeile, zeile)}: {exakt} Sparten centgenau"
                 + (f", {nah} im Rundungsbereich (Buchungsstand)" if nah else ""))
         if ab:
             text += f", {len(ab)} weichen ab"
-        pruefungen.append(_pruefung("Kostentraeger-Auswertung", text,
+        pruefungen.append(_pruefung("Kostenträger-Auswertung", text,
                                     "abweichung" if ab else "ok", summe_y, summe_x, ab))
     return pruefungen
 
@@ -2067,7 +2067,7 @@ def lade_susa(pfad):
 
 
 def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_berechnet):
-    """FiBu-Abstimmung: Erloese, Werkstattbestand zum Stichtag, Bestandsveraenderung UFE."""
+    """FiBu-Abstimmung: Erlöse, Werkstattbestand zum Stichtag, Bestandsveränderung UFE."""
     import datetime
     susa, bis = lade_susa(susa_pfad)
     name = os.path.basename(str(susa_pfad))
@@ -2097,7 +2097,7 @@ def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_bere
     details = [f"{k} {susa.loc[k, 'beschreibung']}: {_de(-susa.loc[k, 'saldo'])} - Konto fehlt "
                f"im Mapping" for k in fehlend]
     pruefungen.append(_pruefung(
-        "FiBu (SuSa)", "Erloese gesamt = Erloeskonten der FiBu",
+        "FiBu (SuSa)", "Erlöse gesamt gegen Erlöskonten der FiBu",
         "ok" if abs(tool - fibu) < 1.0 else "abweichung", fibu, tool, details))
 
     # 2. Werkstattbestand zum Stichtag = Bilanzkonten der unfertigen Erzeugnisse.
@@ -2110,11 +2110,10 @@ def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_bere
         pwbs = float(st.get("zugeordnet", 0.0)) + float(st.get("offen", 0.0))
         pruefungen.append(_pruefung(
             "FiBu (SuSa)",
-            "Werkstattbestand zum Stichtag (ohne Serviceauftraege) = FiBu-Konten "
-            + " + ".join(UFE_KONTEN),
+            "Werkstattbestand zum Stichtag gegen FiBu-Konten " + " + ".join(UFE_KONTEN),
             "ok" if abs(pwbs - fibu_ende) < 1.0 else "abweichung", fibu_ende, pwbs,
             [] if abs(pwbs - fibu_ende) < 1.0 else [
-                "Haeufigste Ursachen: Werkstattbestand nicht am Stichtag gezogen (spaeter "
+                "Häufigste Ursachen: Werkstattbestand nicht am Stichtag gezogen (später "
                 "gezogene Exporte zeigen den heutigen Stand), oder Stichtag passt nicht "
                 "zum Zeitraum."]))
 
@@ -2132,7 +2131,7 @@ def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_bere
             ab_tool = float(st.get("zugeordnet", 0.0)) - ufe_tool
             ab_delta = fibu_anfang - ab_tool
             details = [
-                f"Bestandsveraenderung UFE: Summe der Sparten {_de(ufe_tool)}, Buchung der "
+                f"Bestandsveränderung UFE: Summe der Sparten {_de(ufe_tool)}, Buchung der "
                 f"FiBu {_de(fibu_bewegung)} (Δ {_de(ufe_tool - fibu_bewegung, True)}).",
                 f"Der Unterschied setzt sich zusammen aus dem Anfangsbestand-Unterschied "
                 f"({_de(ab_delta, True)}) und dem nicht zuordenbaren Werkstattbestand ({_de(offen)}).",
@@ -2141,29 +2140,29 @@ def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_bere
                 details.append(
                     "Der hinterlegte Anfangsbestand weicht von der FiBu zum 01.01. ab. Ist der "
                     "Unterschied jeden Monat derselbe, ist das bekannter Bestand ohne Sparte; "
-                    "aendert er sich, wurden die Betriebsparameter veraendert.")
+                    "ändert er sich, wurden die Betriebsparameter verändert.")
             pruefungen.append(_pruefung(
-                "FiBu (SuSa)", "Anfangsbestand (hinterlegt) = FiBu-Konten zum 01.01.",
+                "FiBu (SuSa)", "Hinterlegter Anfangsbestand gegen FiBu zum 01.01.",
                 "ok" if abs(ab_delta) < 1.0 else "hinweis", fibu_anfang, ab_tool, details))
     return pruefungen
 
 
 def _abstimmung_blatt(wb, pruefungen, zeitraum):
-    """Blatt 'Abstimmung': die Pruefungen gegen die Buchhaltung, fuer jeden Leser der Datei."""
+    """Blatt 'Abstimmung': die Prüfungen gegen die Buchhaltung, fuer jeden Leser der Datei."""
     ws = wb.create_sheet("Abstimmung", 1)
     ws.cell(row=1, column=1, value=f"Abstimmung mit der Buchhaltung – {zeitraum}").font = Font(
         bold=True, size=12)
     ws.cell(row=2, column=1, value=(
         "Das Tool rechnet aus dem KPTM-Export. Hier wird das Ergebnis gegen zwei Quellen "
-        "gehalten, die unabhaengig davon entstehen: die Kostentraeger-Auswertung (zweite "
+        "gehalten, die unabhaengig davon entstehen: die Kostenträger-Auswertung (zweite "
         "Rechnung je Sparte) und die Summen- und Saldenliste der FiBu.")).font = Font(
         italic=True, size=9)
-    kopf = ["Quelle", "Pruefung", "Status", "Buchhaltung", "Tool", "Δ"]
+    kopf = ["Quelle", "Prüfung", "Status", "Buchhaltung", "Tool", "Δ"]
     for j, t in enumerate(kopf, start=1):
         z = ws.cell(row=4, column=j, value=t)
         z.fill, z.font = FILL_HEADER, FONT_HEADER
     r = 5
-    status_text = {"ok": "✓ stimmt", "hinweis": "ℹ Hinweis", "abweichung": "⚠ pruefen"}
+    status_text = {"ok": "✓ stimmt", "hinweis": "ℹ Hinweis", "abweichung": "⚠ prüfen"}
     status_fill = {"ok": FILL_AUTO, "hinweis": FILL_AUTO_PRUEF, "abweichung": FILL_MANUAL}
     for p in pruefungen:
         werte = [p["bereich"], p["text"], status_text[p["status"]],
@@ -2212,19 +2211,19 @@ def pruefe_werkstattbestand_buchung(kostentraeger_pfad, ufe, ufe_statistik, schw
     delta = ende - erwartet
     quote = abs(delta) / abs(erwartet) if erwartet else 0.0
     details = [
-        f"Werkstattbestand laut Datei (ohne Serviceauftraege): {_de(ende)}",
-        f"erwartet: Anfangsbestand {_de(anfang)} + gebuchte Bestandsveraenderung "
+        f"Werkstattbestand laut Datei (ohne Serviceaufträge): {_de(ende)}",
+        f"erwartet: Anfangsbestand {_de(anfang)} + gebuchte Bestandsveränderung "
         f"{_de(bewegung, True)} = {_de(erwartet)}",
-        f"Unterschied {_de(delta, True)} ({quote * 100:.1f} %)".replace(".", ","),
+        f"Unterschied {_de(delta, True)} ({f'{quote * 100:.1f}'.replace('.', ',')} %)",
     ]
     if quote > schwelle:
         details.append(
             "Der Werkstattbestand passt nicht zur Buchung. Fast immer wurde er nicht am "
-            "Stichtag, sondern spaeter gezogen - dann zeigt er die Auftraege mit ihrem "
+            "Stichtag, sondern später gezogen - dann zeigt er die Aufträge mit ihrem "
             "heutigen Stand. Bitte den am Stichtag gezogenen Werkstattbestand verwenden.")
     return _pruefung(
-        "Kostentraeger-Auswertung",
-        "Werkstattbestand passt zur gebuchten Bestandsveraenderung (Konto 1041000)",
+        "Kostenträger-Auswertung",
+        "Werkstattbestand gegen gebuchte Bestandsveränderung (Konto 1041000)",
         "abweichung" if quote > schwelle else "ok", erwartet, ende, details)
 
 
@@ -2312,9 +2311,11 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
             if werkstatt_pruefung and werkstatt_pruefung["status"] == "abweichung":
                 # Wie bei zu grosser Zuordnungsluecke: lieber keine Zahl als eine falsche.
                 ufe_warnungen.append(
-                    "Der Werkstattbestand passt nicht zur gebuchten Bestandsveraenderung "
-                    "(Kostentraeger-Auswertung, Konto 1041000): "
-                    + " ".join(werkstatt_pruefung["details"]))
+                    "Der Werkstattbestand passt nicht zur gebuchten Bestandsveränderung "
+                    "(Kostenträger-Auswertung, Konto 1041000). Fast immer wurde er nicht am "
+                    "Stichtag, sondern später gezogen - dann zeigt er die Aufträge mit ihrem "
+                    "heutigen Stand. Bitte den am Stichtag gezogenen Werkstattbestand verwenden.")
+                ufe_warnungen.extend(werkstatt_pruefung["details"][:3])
                 ufe = None
         if ufe:
             for pg, wert in ufe.items():

@@ -582,3 +582,167 @@ footer a { color: var(--accent); }
   .rechnet-schritte li:first-child { opacity: 1; }
   .rechnet-balken span { animation-duration: 4s; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Ergebnisansicht: Kopf mit Ampel und Kennzahlen, darunter aufklappbare Bereiche
+   --------------------------------------------------------------------------- */
+.ergebnis-kopf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+  margin-bottom: 1rem;
+}
+.ergebnis-kopf h2 { margin: 0; }
+.ergebnis-zeitraum {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.ampel {
+  margin-left: auto;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.ampel-gruen { background: var(--gruen-bg); color: var(--gruen-text); }
+.ampel-rot { background: var(--rot-bg); color: var(--rot-text); }
+
+.kacheln {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.kachel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fbfcfd;
+  min-width: 0;
+}
+.kachel-label { font-size: 0.72rem; color: var(--text-muted); }
+.kachel-wert {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .kacheln { grid-template-columns: 1fr; }
+  .ampel { margin-left: 0; }
+}
+
+.abschnitt {
+  margin-top: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.abschnitt > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.abschnitt > summary::-webkit-details-marker { display: none; }
+.abschnitt > summary::before {
+  content: "›";
+  display: inline-block;
+  width: 0.8rem;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.abschnitt[open] > summary::before { transform: rotate(90deg); }
+.abschnitt > summary:hover { background: #fbfcfd; border-radius: var(--radius-sm); }
+.abschnitt-meta {
+  margin-left: auto;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.meta-rot { background: var(--rot-bg); color: var(--rot-text); }
+.meta-gelb { background: var(--gelb-bg); color: var(--gelb-text); }
+.meta-gruen { background: var(--gruen-bg); color: var(--gruen-text); }
+.meta-neutral { background: var(--bg); color: var(--text-muted); }
+.abschnitt-inhalt { padding: 0 0.9rem 0.8rem; }
+.abschnitt-inhalt .zuordnung:first-child { margin-top: 0.2rem; }
+
+/* Meldungen: eine Zeile je Punkt, Text erst auf Klick */
+.meldungen { display: flex; flex-direction: column; gap: 0.35rem; }
+.meldung {
+  border-radius: var(--radius-sm);
+  background: #fbfcfd;
+  border: 1px solid var(--border);
+}
+.meldung > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.85rem;
+}
+.meldung > summary::-webkit-details-marker { display: none; }
+.meldung .punkt {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  transform: translateY(-1px);
+}
+.meldung-kritisch .punkt { background: var(--rot); }
+.meldung-pruefen .punkt { background: #e8a33d; }
+.meldung-info .punkt { background: var(--accent); }
+.meldung-kritisch { border-color: var(--rot-bg); background: #fff7f7; }
+.meldung-titel { flex: 1; }
+.meldung > summary::after {
+  content: "mehr";
+  font-size: 0.72rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.meldung[open] > summary::after { content: "weniger"; }
+.meldung-text {
+  padding: 0 0.7rem 0.6rem 1.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.meldung-text p { margin: 0 0 0.35rem; overflow-wrap: anywhere; }
+
+/* Abstimmung: eine Zeile je Pruefung */
+.pruef-zeile {
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.pruef-zeile:last-of-type { border-bottom: none; }
+.pruef-zeichen { flex: none; width: 1rem; font-weight: 700; }
+.pruef-ok .pruef-zeichen { color: var(--gruen-text); }
+.pruef-hinweis .pruef-zeichen { color: var(--accent); }
+.pruef-abweichung .pruef-zeichen { color: var(--rot-text); }
+#result .abschnitt .hinweis { font-size: 0.78rem; color: var(--text-muted); margin: 0.6rem 0 0; }
+.pruef-details {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}

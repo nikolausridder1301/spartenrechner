@@ -525,8 +525,13 @@ async function rechenAnimationZeigen() {
   // Kurz warten, bis das Overlay gezeichnet ist, bevor Python den Browser blockiert -
   // sonst erschiene es erst, wenn die Berechnung schon vorbei ist. Bewusst ohne
   // Einblend-Effekt: der koennte halbfertig stehen bleiben.
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  await new Promise((r) => setTimeout(r, 100));
+  // Hoechstens 150 ms: Liegt der Tab im Hintergrund, zeichnet der Browser gar nicht -
+  // ohne Obergrenze begaenne die Berechnung dann erst bei der Rueckkehr zum Tab.
+  await Promise.race([
+    new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+    new Promise((r) => setTimeout(r, 150)),
+  ]);
+  await new Promise((r) => setTimeout(r, 50));
 }
 
 function rechenAnimationVerbergen() {
@@ -578,211 +583,237 @@ function summaryZeile(label, wert, info, fett) {
   return `<div class="summary-line"><span>${l}${fragezeichen}</span><span>${w}</span></div>`;
 }
 
-function showResult(summary, url, filename) {
-  const eurF = (v) => v.toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  let html = "<h2>✅ Spartenrechnung erstellt</h2>";
-  html += summaryZeile("Rohdaten-Zeilen verarbeitet",
-    summary.zeilen.toLocaleString("de-DE"), "zeilen");
-  html += summaryZeile("Erlöse (Summe der Sparten)",
-    eurF(summary.erloese_summe) + " €", "erloese");
-  html += summaryZeile("DB III bottom-up (Summe der Sparten)",
-    eurF(summary.db3_summe) + " €", "db3");
+/* Ergebnisansicht. Oben nur, was man sofort wissen muss (Ampel, drei Kennzahlen,
+   Download); alles Weitere in aufklappbaren Bereichen. Meldungen stehen dort als
+   einzeilige Titel - der ausfuehrliche Text erst auf Klick. Vorher stand alles
+   untereinander ausgeschrieben, und die wichtigen Punkte gingen darin unter. */
+function esc(t) {
+  return String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
 
-  // Die aus den Rohdaten zurueckgerechneten Zuschlagssaetze. Frueher stand hier der
-  // erwartete Satz als Vergleichswert - der gehoert nicht in oeffentlichen Quellcode.
+// Kurzer Titel aus einer langen Meldung: der erste Satz, notfalls gekuerzt.
+function titelAus(text) {
+  const t = String(text || "").trim();
+  const ende = t.search(/[.:](\s|$)/);
+  const satz = ende > 0 ? t.slice(0, ende) : t;
+  return satz.length > 90 ? satz.slice(0, 88) + "…" : satz;
+}
+
+/* Eine Meldung: einzeiliger Titel, Text aufklappbar. stufe: "kritisch" | "pruefen" | "info" */
+function meldung(stufe, titel, text, details) {
+  const zeilen = [].concat(text ? [text] : [], details || []);
+  const koerper = zeilen.length
+    ? `<div class="meldung-text">${zeilen.map((z) => `<p>${esc(z)}</p>`).join("")}</div>` : "";
+  return `<details class="meldung meldung-${stufe}"><summary><span class="punkt"></span>
+    <span class="meldung-titel">${esc(titel)}</span></summary>${koerper}</details>`;
+}
+
+/* Ein aufklappbarer Bereich mit Kurzinfo rechts (sichtbar auch eingeklappt). */
+function bereich(id, titel, meta, metaStufe, inhalt, offen) {
+  return `<details class="abschnitt" id="${id}"${offen ? " open" : ""}>
+    <summary><span class="abschnitt-titel">${titel}</span>
+      <span class="abschnitt-meta meta-${metaStufe}">${meta}</span></summary>
+    <div class="abschnitt-inhalt">${inhalt}</div></details>`;
+}
+
+function showResult(summary, url, filename) {
+  const eurF = (v) => (v || 0).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const eur = (v) => eurF(v) + " €";
+  const pct = (v) => (v * 100).toLocaleString("de-DE", {minimumFractionDigits: 1, maximumFractionDigits: 1}) + " %";
+  const abst = summary.abstimmung || [];
+  const stat = summary.ufe_statistik;
+  const st = summary.struktur;
+  const dd = summary.deckungsdifferenzen || {};
+  const ufeGesperrt = !!(summary.ufe_warnungen && summary.ufe_warnungen.length);
+
+  // --- Meldungen einsammeln: was Zahlen falsch macht oder fehlen laesst ("zu pruefen"),
+  //     und was man wissen sollte, ohne dass etwas fehlt ("Hinweise").
+  const pruefen = [];
+  const hinweise = [];
+  if (ufeGesperrt) {
+    pruefen.push(meldung("kritisch", "Bestandsveränderung UFE wurde nicht berechnet",
+      "Die Zeile steht auf 0,00 – Betriebsleistung und alle Deckungsbeiträge darunter sind um diesen Betrag zu niedrig.",
+      summary.ufe_warnungen));
+  }
+  for (const p of abst.filter((x) => x.status === "abweichung")) {
+    // Die Werkstattbestands-Pruefung steckt bei gesperrter UFE-Zeile schon oben drin.
+    if (ufeGesperrt && p.text.startsWith("Werkstattbestand gegen gebuchte")) continue;
+    pruefen.push(meldung("pruefen", "Abstimmung: " + p.text, null, p.details));
+  }
+  if (st && st.fehlt) {
+    pruefen.push(meldung("pruefen", "Alte und neue Produktgruppen stehen nebeneinander",
+      `Der Export enthält Buchungen auf aufgelösten Produktgruppen (${st.alte.join(", ")}), es ist aber keine Umschlüsselung hinterlegt. Bitte die aktuelle betriebsparameter.xlsx (mit Blatt „Umschluesselung") laden.`));
+  }
+  for (const h of dd.hinweise || []) {
+    pruefen.push(meldung("pruefen", "Deckungsdifferenzen: " + titelAus(h), h));
+  }
+  if (summary.unbekannte_kostenarten && summary.unbekannte_kostenarten.length) {
+    const b = summary.unmapped_betrag || {};
+    const summe = Object.values(b).reduce((a, v) => a + v, 0);
+    pruefen.push(meldung("pruefen", `Kostenarten ohne Zuordnung – ${eur(summe)} fehlen im Ergebnis`,
+      "Diese Konten sind keiner GuV-Zeile zugeordnet; ihre Beträge fehlen. Bitte in config/kostenart_mapping.json eintragen.",
+      summary.unbekannte_kostenarten.map((k) => `${k}: ${eur(b[k])}`)));
+  }
+  if (summary.unbekannte_produktgruppen && summary.unbekannte_produktgruppen.length) {
+    pruefen.push(meldung("pruefen", "Unbekannte Produktgruppen: " + summary.unbekannte_produktgruppen.join(", "),
+      "Nicht in config/produktgruppen.json – ggf. Reorganisation. Sie erscheinen als eigene Spalte."));
+  }
+  if (summary.fracht_ohne_ziel && Object.keys(summary.fracht_ohne_ziel).length) {
+    pruefen.push(meldung("pruefen", "Ausgangsfracht blieb auf der operativen Sparte",
+      "Es fehlt das Kostenobjekt <Familie>0100. Der Deckungsbeitrag dieser Sparte ist dadurch zu niedrig.",
+      Object.entries(summary.fracht_ohne_ziel).map(([k, v]) => `${k}: ${eur(v)}`)));
+  }
+  for (const p of abst.filter((x) => x.status === "hinweis")) {
+    hinweise.push(meldung("info", p.text, null, p.details));
+  }
+  for (const h of (stat && stat.hinweise) || []) {
+    hinweise.push(meldung("info", "Werkstattbestand: " + titelAus(h), h));
+  }
+  for (const h of summary.mgk_hinweise || []) {
+    hinweise.push(meldung("info", "Zuschlagssätze: " + titelAus(h), h));
+  }
+  if (summary.per_regel_zugeordnet && summary.per_regel_zugeordnet.length) {
+    const k = summary.per_regel_zugeordnet;
+    hinweise.push(meldung("info", `${k.length} Konten per Kontenregel zugeordnet`,
+      "Nicht einzeln hinterlegt – alle 6er-Konten gehen auf „sbA\". Bitte kurz prüfen, ob das für diese Konten stimmt; falls nicht, in config/kostenart_mapping.json einzeln eintragen.",
+      [k.join(", ")]));
+  }
+  if (abst.length && !summary.susa_geladen) {
+    hinweise.push(meldung("info", "Ohne SuSa: Abstimmung mit der FiBu entfällt",
+      "Geprüft wurde nur gegen die Kostenträger-Auswertung. Mit SuSa kommen Erlöse, Werkstattbestand und Anfangsbestand gegen die FiBu dazu."));
+  }
+
+  // --- Kopf: Ampel, drei Kennzahlen, Download
+  // Bestanden ist alles ausser einer Abweichung - ein Hinweis ist kein Fehler.
+  const nOk = abst.filter((p) => p.status !== "abweichung").length;
+  const ampel = pruefen.length
+    ? `<span class="ampel ampel-rot">⚠ ${pruefen.length} ${pruefen.length === 1 ? "Punkt" : "Punkte"} prüfen</span>`
+    : `<span class="ampel ampel-gruen">✓ Abgestimmt</span>`;
+  let html = `<div class="ergebnis-kopf"><h2>Spartenrechnung erstellt</h2>
+    <span class="ergebnis-zeitraum">${esc(summary.zeitraum)}</span>${ampel}</div>`;
+  html += `<div class="kacheln">
+    <div class="kachel"><span class="kachel-label">Erlöse</span><span class="kachel-wert">${eurF(summary.erloese_summe)} €</span></div>
+    <div class="kachel"><span class="kachel-label">DB III (Sparten)</span><span class="kachel-wert">${eurF(summary.db3_summe)} €</span></div>
+    <div class="kachel"><span class="kachel-label">Abstimmung</span><span class="kachel-wert">${abst.length ? `${nOk} / ${abst.length}${nOk === abst.length ? " ✓" : ""}` : "–"}</span></div>
+  </div>`;
+  html += `<a class="download-btn" href="${url}" download="${filename}">⬇ ${esc(filename)} herunterladen</a>`;
+
+  // --- Bereiche
+  if (pruefen.length) {
+    html += bereich("ab-pruefen", "Zu prüfen", String(pruefen.length), "rot",
+      `<div class="meldungen">${pruefen.join("")}</div>`, true);
+  }
+
+  if (abst.length) {
+    const zeichen = { ok: "✓", hinweis: "ℹ", abweichung: "⚠" };
+    let inhalt = "";
+    for (const p of abst) {
+      // Nicht bestandene Pruefungen zeigen ihre Zahlen direkt darunter.
+      const unter = p.status !== "ok" && p.details && p.details.length
+        ? `<div class="pruef-details">${p.details.slice(0, 6).map((d) => `<div>${esc(d)}</div>`).join("")}</div>` : "";
+      inhalt += `<div class="pruef-zeile pruef-${p.status}"><span class="pruef-zeichen">${zeichen[p.status]}</span>
+        <span>${esc(p.text)}${unter}</span></div>`;
+    }
+    inhalt += `<p class="hinweis">Gegenprobe gegen die Kostenträger-Auswertung${summary.susa_geladen ? " und die SuSa" : ""}
+      – Quellen, die unabhängig vom KPTM-Export entstehen.
+      <span class="info-icon" tabindex="0" role="button" data-info="abstimmung" aria-label="Erklärung: Abstimmung">?</span></p>`;
+    html += bereich("ab-abstimmung", "Abstimmung mit der Buchhaltung", `${nOk} von ${abst.length}`,
+      nOk === abst.length ? "gruen" : "gelb", inhalt, false);
+  }
+
+  let kennzahlen = summaryZeile("Rohdaten-Zeilen verarbeitet", summary.zeilen.toLocaleString("de-DE"), "zeilen");
+  kennzahlen += summaryZeile("Erlöse (Summe der Sparten)", eur(summary.erloese_summe), "erloese");
+  kennzahlen += summaryZeile("DB III bottom-up (Summe der Sparten)", eur(summary.db3_summe), "db3");
+  // Die aus den Rohdaten zurueckgerechneten Zuschlagssaetze - nur eine Probe.
   const saetze = summary.zuschlagssaetze || {};
   for (const [key, label] of [["mgk", "MGK"], ["vvgk", "VVGK"]]) {
     if (saetze[key] === undefined || saetze[key] === null) continue;
     const satz = (saetze[key] * 100).toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    html += summaryZeile(`${label}-Zuschlagssatz (Probe – gegen die eigene Kalkulation prüfen)`,
-      satz + " %", key + "_satz");
+    kennzahlen += summaryZeile(`${label}-Zuschlagssatz (Probe)`, satz + " %", key + "_satz");
   }
-
   if (summary.unproduktive_gemeinkosten) {
     const std = summary.unproduktive_stunden.toLocaleString("de-DE", {maximumFractionDigits: 0});
-    html += summaryZeile(`Nicht auf Kostenträger gebuchte Stunden (${std} h)`,
-      eurF(summary.unproduktive_gemeinkosten) + " €", "unproduktiv");
+    kennzahlen += summaryZeile(`Nicht auf Kostenträger gebuchte Stunden (${std} h)`,
+      eur(summary.unproduktive_gemeinkosten), "unproduktiv");
   }
-
-  // Abstimmung mit der Buchhaltung - oben, weil sie sagt, ob man den Zahlen trauen kann.
-  const abst = summary.abstimmung || [];
-  if (abst.length) {
-    const nOk = abst.filter((p) => p.status === "ok").length;
-    const zeichen = { ok: "✓", hinweis: "ℹ️", abweichung: "⚠️" };
-    html += `<h2 style="margin-top:1.5rem">Abstimmung mit der Buchhaltung
-      <span class="info-icon" tabindex="0" role="button" data-info="abstimmung"
-        aria-label="Erklärung: Abstimmung">?</span></h2>`;
-    html += summaryZeile("Prüfungen bestanden", `${nOk} von ${abst.length}`, null, true);
-    for (const p of abst) {
-      const kurz = p.text.length > 90 ? p.text.slice(0, 88) + "…" : p.text;
-      if (p.status === "ok") {
-        html += `<div class="summary-line"><span>${zeichen.ok} ${kurz}</span><span></span></div>`;
-      } else {
-        html += `<div class="warning-box">${zeichen[p.status]} <strong>${p.bereich}:</strong> ${p.text}`;
-        if (p.details && p.details.length) html += `<br>` + p.details.slice(0, 8).join("<br>");
-        html += `</div>`;
-      }
-    }
-  }
-
-  if (abst.length && !summary.susa_geladen) {
-    html += `<p class="hinweis">Ohne SuSa: Die Abstimmung mit der FiBu (Erlöse,
-      Werkstattbestand, Anfangsbestand) entfällt – geprüft wurde nur gegen die
-      Kostenträger-Auswertung.</p>`;
-  }
-
-  const st = summary.struktur;
-  if (st && st.fehlt) {
-    html += `<div class="warning-box">⚠️ Der Export enthält Buchungen auf aufgelösten
-      Produktgruppen (<strong>${st.alte.join(", ")}</strong>), es ist aber keine Umschlüsselung
-      hinterlegt – alte und neue Struktur stehen nebeneinander. Bitte die aktuelle
-      <strong>betriebsparameter.xlsx</strong> (mit Blatt „Umschluesselung") unten laden.</div>`;
-  } else if (st) {
-    html += summaryZeile("Neue Produktgruppen-Struktur: umgeschlüsselte Buchungen",
+  if (st && !st.fehlt) {
+    kennzahlen += summaryZeile("Umgeschlüsselte Buchungen (neue Produktgruppen)",
       st.zeilen.toLocaleString("de-DE") + ` · ${summary.naeherung_zellen} Zellen Näherung`, "struktur");
   }
+  html += bereich("ab-kennzahlen", "Kennzahlen",
+    summary.zeilen.toLocaleString("de-DE") + " Buchungen", "neutral", kennzahlen, false);
 
-  const dd = summary.deckungsdifferenzen || {};
-  if (dd.hinweise && dd.hinweise.length) {
-    html += `<div class="warning-box">⚠️ Deckungsdifferenzen: ${dd.hinweise.join(" ")}</div>`;
-  }
-
-  if (summary.mgk_hinweise && summary.mgk_hinweise.length) {
-    html += `<div class="warning-box">⚠️ ${summary.mgk_hinweise.join(" ")}</div>`;
-  }
-
-  if (summary.ufe_warnungen && summary.ufe_warnungen.length) {
-    html += `<div class="warning-box">⚠️ Bestandsveränderung UFE wurde <strong>nicht</strong> berechnet: `;
-    html += summary.ufe_warnungen.join(" ");
-    html += `</div>`;
-  }
-
-  const stat = summary.ufe_statistik;
   if (stat) {
-    const eur = (v) => v.toLocaleString("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €";
-    const pct = (v) => (v * 100).toLocaleString("de-DE", {minimumFractionDigits: 1, maximumFractionDigits: 1}) + " %";
     const zugeordnetQuote = stat.gesamt ? stat.zugeordnet / stat.gesamt : 0;
-    html += `<h2 style="margin-top:1.5rem">Werkstattbestand – Zuordnung</h2>`;
-    html += summaryZeile("einer Sparte zugeordnet",
-      `${eur(stat.zugeordnet)} · ${pct(zugeordnetQuote)}`, "wb_zugeordnet");
-    html += summaryZeile("Serviceaufträge (bewusst ausgeschlossen)",
-      `${eur(stat.service)} · ${pct(stat.service_quote)}`, "wb_service");
-    html += summaryZeile("nicht zuordenbar",
-      `${eur(stat.offen)} · ${pct(stat.luecke_quote)}`, "wb_offen");
-    html += summaryZeile("Werkstattbestand gesamt", eur(stat.gesamt), "wb_gesamt", true);
-
-    // Warnungen, die die Zeile NICHT blockieren, aber die Belastbarkeit einzelner
-    // Sparten betreffen. Die Prozentschwelle misst am Gesamtbestand und sagt darum
-    // nichts ueber eine kleine Sparte aus.
-    if (stat.hinweise && stat.hinweise.length) {
-      html += `<div class="warning-box">⚠️ ${stat.hinweise.join(" ")}</div>`;
-    }
-    if (stat.ueber_artikel > 0 || stat.service_mit_quelle > 0) {
-      html += `<details class="zuordnung"><summary>Wie belastbar ist die Zuordnung?</summary>`;
-      html += `<div class="summary-line"><span>über die Auftragsnummer (sicherster Weg)</span>
-        <span>${eur(stat.zugeordnet - stat.ueber_artikel)}</span></div>`;
-      html += `<div class="summary-line"><span>nur über die Artikelnummer (schwächer)</span>
-        <span>${eur(stat.ueber_artikel)}</span></div>`;
-      if (stat.mehrdeutige_artikel) {
-        html += `<div class="summary-line"><span>Artikel ohne eindeutige Sparte (nicht nutzbar)</span>
-          <span>${stat.mehrdeutige_artikel}</span></div>`;
-      }
-      html += `<div class="summary-line"><span>Serviceaufträge, für die eine Sparte bekannt wäre</span>
-        <span>${eur(stat.service_mit_quelle)}</span></div>`;
-      html += `<p class="hinweis">Der Weg über die <strong>Artikelnummer</strong> ist schwächer:
-        Wird ein Artikel in einem späteren Export mehrdeutig, entfällt die Zuordnung – mehr
-        Daten können das Ergebnis dort also verschlechtern. Die genannten Serviceaufträge
-        werden bewusst abgezogen (es wird nichts gefertigt); das ist gegen die
-        Referenzrechnung Q1 2026 geprüft, der Betrag wächst aber.</p></details>`;
-    }
+    let wb = summaryZeile("einer Sparte zugeordnet", `${eur(stat.zugeordnet)} · ${pct(zugeordnetQuote)}`, "wb_zugeordnet");
+    wb += summaryZeile("Serviceaufträge (bewusst ausgeschlossen)", `${eur(stat.service)} · ${pct(stat.service_quote)}`, "wb_service");
+    wb += summaryZeile("nicht zuordenbar", `${eur(stat.offen)} · ${pct(stat.luecke_quote)}`, "wb_offen");
+    wb += summaryZeile("Werkstattbestand gesamt", eur(stat.gesamt), "wb_gesamt", true);
 
     const bereits = Object.keys(manuelleZuordnung).length;
     if (bereits) {
-      html += `<div class="summary-line"><span>davon von Hand zugeordnet</span><span>${bereits} Aufträge</span></div>`;
+      wb += summaryZeile("davon von Hand zugeordnet", `${bereits} Aufträge`);
     }
-
-    // Der Bestand zum Stichtag ist der Anfangsbestand der Folgeperiode. Faellt der
-    // Stichtag auf den 01.01., ist es die Jahreskonstante des naechsten Jahres -
-    // dann muss sie nicht von Hand gepflegt werden, sondern faellt hier heraus.
+    if (stat.ueber_artikel > 0 || stat.service_mit_quelle > 0) {
+      wb += `<details class="zuordnung"><summary>Wie belastbar ist die Zuordnung?</summary>`;
+      wb += summaryZeile("über die Auftragsnummer (sicherster Weg)", eur(stat.zugeordnet - stat.ueber_artikel));
+      wb += summaryZeile("nur über die Artikelnummer (schwächer)", eur(stat.ueber_artikel));
+      if (stat.mehrdeutige_artikel) {
+        wb += summaryZeile("Artikel ohne eindeutige Sparte (nicht nutzbar)", String(stat.mehrdeutige_artikel));
+      }
+      wb += summaryZeile("Serviceaufträge, für die eine Sparte bekannt wäre", eur(stat.service_mit_quelle));
+      wb += `<p class="hinweis">Der Weg über die <strong>Artikelnummer</strong> ist schwächer:
+        Wird ein Artikel in einem späteren Export mehrdeutig, entfällt die Zuordnung. Die
+        genannten Serviceaufträge werden bewusst abgezogen (es wird nichts gefertigt).</p></details>`;
+    }
+    // Der Bestand zum Stichtag ist der Anfangsbestand der Folgeperiode.
     if (stat.bestand_stichtag && Object.keys(stat.bestand_stichtag).length) {
-      html += `<details class="zuordnung"><summary>Werkstattbestand als Betriebsparameter sichern</summary>`;
-      html += `<p class="hinweis">Der hier errechnete Bestand ist zugleich der
-        <strong>Anfangsbestand der Folgeperiode</strong>. Wenn Sie den Abschluss zum
-        <strong>01.01.</strong> rechnen, ist das die Jahreskonstante des neuen Jahres –
-        speichern, Jahreszahl in der Tabelle prüfen, fertig. Dann muss nichts von Hand
-        gepflegt werden.</p>`;
-      html += `<button type="button" id="param-sichern">⬇ betriebsparameter.xlsx</button></details>`;
+      wb += `<details class="zuordnung"><summary>Werkstattbestand als Betriebsparameter sichern</summary>`;
+      wb += `<p class="hinweis">Der hier errechnete Bestand ist zugleich der
+        <strong>Anfangsbestand der Folgeperiode</strong>. Beim Abschluss zum <strong>01.01.</strong>
+        ist das die Jahreskonstante des neuen Jahres – speichern, Jahreszahl prüfen, fertig.</p>`;
+      wb += `<button type="button" id="param-sichern">⬇ betriebsparameter.xlsx</button></details>`;
     }
-
     if (stat.offene_auftraege && stat.offene_auftraege.length) {
       const optionen = (summary.produktgruppen_auswahl || [])
         .map((p) => `<option value="${p}">${p}</option>`).join("");
-      html += `<details class="zuordnung" id="zuordnung-block"${bereits ? " open" : ""}><summary>`;
-      html += `${stat.offene_auftraege.length} Aufträge selbst zuordnen `;
-      html += `<span class="meta-label">(nach Wert sortiert)</span></summary>`;
-      html += `<p class="hinweis">Ordnen Sie die größten Posten zu, bis die Lücke unter 1 % fällt –
+      wb += `<details class="zuordnung" id="zuordnung-block"${bereits ? " open" : ""}><summary>`;
+      wb += `${stat.offene_auftraege.length} Aufträge selbst zuordnen `;
+      wb += `<span class="meta-label">(nach Wert sortiert)</span></summary>`;
+      wb += `<p class="hinweis">Ordnen Sie die größten Posten zu, bis die Lücke unter 1 % fällt –
         dann rechnet die UFE-Zeile. Zugeordnete Aufträge verschwinden aus dieser Liste und bleiben
         gespeichert, solange die Seite geöffnet ist.</p>`;
-      html += `<table class="zuordnung-tabelle"><thead><tr>
+      wb += `<table class="zuordnung-tabelle"><thead><tr>
         <th>Auftrag</th><th>Bezeichnung</th><th style="text-align:right">Offener Wert</th><th>Sparte</th>
         </tr></thead><tbody>`;
       for (const a of stat.offene_auftraege.slice(0, 60)) {
-        html += `<tr><td>${a.auftrag ?? ""}</td><td>${a.bezeichnung}</td>`;
-        html += `<td style="text-align:right">${eur(a.wert)}</td>`;
-        html += `<td><select class="zuordnung-select" data-auftrag="${a.auftrag ?? ""}">
+        wb += `<tr><td>${esc(a.auftrag)}</td><td>${esc(a.bezeichnung)}</td>`;
+        wb += `<td style="text-align:right">${eur(a.wert)}</td>`;
+        wb += `<td><select class="zuordnung-select" data-auftrag="${esc(a.auftrag)}">
           <option value="">– offen –</option>${optionen}</select></td></tr>`;
       }
-      html += `</tbody></table>`;
+      wb += `</tbody></table>`;
       if (stat.offene_auftraege.length > 60) {
-        html += `<p class="hinweis">Angezeigt werden die 60 größten von ${stat.offene_auftraege.length} Aufträgen.</p>`;
+        wb += `<p class="hinweis">Angezeigt werden die 60 größten von ${stat.offene_auftraege.length} Aufträgen.</p>`;
       }
-      html += `<button type="button" id="neu-berechnen">Mit dieser Zuordnung neu berechnen</button>`;
-      html += `</details>`;
+      wb += `<button type="button" id="neu-berechnen">Mit dieser Zuordnung neu berechnen</button></details>`;
     }
+    html += bereich("ab-werkstatt", "Werkstattbestand",
+      // Serviceauftraege sind bewusst ausgeschlossen - massgeblich ist, was OFFEN bleibt.
+      ufeGesperrt ? "UFE nicht berechnet"
+        : (stat.offen > 0.005 ? `${pct(stat.luecke_quote)} offen` : "vollständig zugeordnet"),
+      ufeGesperrt ? "rot" : (stat.luecke_quote < 0.01 ? "gruen" : "gelb"), wb, bereits > 0);
   }
 
-  // Per Auffangregel zugeordnete Konten ausweisen - sie sind korrekt verbucht,
-  // aber niemand hat sie einzeln geprueft. Das gehoert vor Augen, nicht ins Log.
-  if (summary.fracht_ohne_ziel && Object.keys(summary.fracht_ohne_ziel).length) {
-    const eurF = (v) => (v || 0).toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
-    const teile = Object.entries(summary.fracht_ohne_ziel).map(([k, v]) => `${k} (${eurF(v)} €)`);
-    html += `<div class="warning-box">⚠️ Ausgangsfracht konnte nicht auf ein Frachtkostenobjekt
-      umgebucht werden und blieb auf der operativen Sparte: <strong>${teile.join(", ")}</strong>.
-      Es fehlt das Kostenobjekt &lt;Familie&gt;0100. Der Deckungsbeitrag dieser Sparte ist
-      dadurch zu niedrig.</div>`;
+  if (hinweise.length) {
+    html += bereich("ab-hinweise", "Hinweise", String(hinweise.length), "gelb",
+      `<div class="meldungen">${hinweise.join("")}</div>`, false);
   }
 
-  if (summary.per_regel_zugeordnet && summary.per_regel_zugeordnet.length) {
-    html += `<div class="warning-box">ℹ️ Nach Kontenregel zugeordnet (nicht einzeln
-      hinterlegt): <strong>${summary.per_regel_zugeordnet.join(", ")}</strong>.
-      Alle 6er-Konten gehen auf „sbA". Bitte kurz prüfen, ob das für diese Konten
-      stimmt – falls nicht, in <code>config/kostenart_mapping.json</code> einzeln
-      eintragen.</div>`;
-  }
-
-  if (summary.unbekannte_produktgruppen.length || summary.unbekannte_kostenarten.length) {
-    html += `<div class="warning-box">⚠️ `;
-    if (summary.unbekannte_produktgruppen.length) {
-      html += `Unbekannte Produktgruppen gefunden (nicht in config/produktgruppen.json, ggf. Reorganisation): <strong>${summary.unbekannte_produktgruppen.join(", ")}</strong>. `;
-    }
-    if (summary.unbekannte_kostenarten.length) {
-      // Mit Betrag: erst der sagt, wie dringend es ist.
-      const b = summary.unmapped_betrag || {};
-      const eurF = (v) => (v || 0).toLocaleString("de-DE", {minimumFractionDigits:2, maximumFractionDigits:2});
-      const teile = summary.unbekannte_kostenarten.map((k) => `${k} (${eurF(b[k])} €)`);
-      const summe = Object.values(b).reduce((a, v) => a + v, 0);
-      html += `Kostenarten ohne Mapping – diese Beträge <strong>fehlen im Ergebnis</strong>:
-        <strong>${teile.join(", ")}</strong>, zusammen ${eurF(summe)} €. `;
-    }
-    html += `Siehe README für Details.</div>`;
-  }
-
-  html += `<a class="download-btn" href="${url}" download="${filename}">⬇ ${filename} herunterladen</a>`;
-  html += `<div class="legend">
+  html += `<div class="legend">In der Excel-Datei:
     <span class="status-badge badge-gruen">automatisch</span>
     <span class="status-badge badge-gelb">Näherung</span>
     <span class="status-badge badge-rot">manuell zu ergänzen</span>
-    – Details siehe Hinweise-Sheet in der Datei.
   </div>`;
 
   resultBox.innerHTML = html;
