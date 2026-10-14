@@ -116,7 +116,12 @@ Blatt „Abstimmung" der Excel-Datei:
 1. **Kostenträger-Auswertung:** Aus ihr wird jede Zeile (Erlöse, FE, Material,
    Fremdleistungen, sbA, FEK, MGK, VVGK) je Sparte ein zweites Mal gerechnet.
    Abweichungen unter 1 % gelten als Buchungsstand. Geeicht an Q1 2026: Sie zeigt
-   dort genau die Abweichungen, die auch die Referenzrechnung zeigt.
+   dort genau die Abweichungen, die auch die Referenzrechnung zeigt. Außerdem
+   enthält sie die gebuchte Bestandsveränderung (Konto 1041000): Anfangsbestand plus
+   Buchung ergibt den zu erwartenden Werkstattbestand. Weicht die hochgeladene Datei
+   um mehr als 2 % davon ab, sperrt das Tool die UFE-Zeile – fast immer wurde der
+   Werkstattbestand dann nicht am Stichtag, sondern nachträglich gezogen (gemessen:
+   am Stichtag gezogen 0,4 %, rückwirkend gezogen 11,5 %).
 2. **SuSa:** Erlöse gesamt gegen alle Erlöskonten der FiBu (auch solche, die das
    Mapping noch nicht kennt), Werkstattbestand zum Stichtag gegen die Bilanzkonten
    1040000 + 1041000, und der hinterlegte Anfangsbestand gegen die FiBu zum 01.01.

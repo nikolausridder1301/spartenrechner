@@ -2183,6 +2183,51 @@ def _abstimmung_blatt(wb, pruefungen, zeitraum):
         ws.column_dimensions[sp].width = b
 
 
+def pruefe_werkstattbestand_buchung(kostentraeger_pfad, ufe, ufe_statistik, schwelle=0.02):
+    """Passt der Werkstattbestand zur gebuchten Bestandsveraenderung?
+
+    Die Kostentraeger-Auswertung enthaelt die Buchung der Bestandsveraenderung auf den
+    Bilanzkonten der unfertigen Erzeugnisse (1041000, auf Kostenobjekt 910000). Daraus
+    folgt der zu erwartende Endbestand: Anfangsbestand + Buchung. Ein Werkstattbestand,
+    der nachtraeglich gezogen wurde, zeigt die Auftraege mit ihrem HEUTIGEN Stand und
+    liegt deutlich daneben - gemessen an Q1 2026: am Stichtag gezogen 0,41 %, im Oktober
+    rueckwirkend gezogen 11,5 %. Die verbleibende kleine Differenz ist der konstante
+    Unterschied zwischen hinterlegtem Anfangsbestand und FiBu (Bestand ohne Sparte);
+    sie war im Q1 und im September centgenau derselbe Betrag.
+
+    Liefert eine Pruefung (siehe _pruefung) oder None, wenn nichts zu pruefen ist.
+    """
+    if not ufe or not ufe_statistik:
+        return None
+    kt = pd.read_excel(kostentraeger_pfad, sheet_name="Penta")
+    kt.columns = [str(c).strip() for c in kt.columns]
+    gebucht = kt["Kostenart"].astype(str).str.strip().isin(UFE_KONTEN)
+    if not gebucht.any():
+        return None
+    bewegung = float(kt.loc[gebucht, "Wert/Menge"].sum())
+    zugeordnet = float(ufe_statistik.get("zugeordnet", 0.0))
+    ende = zugeordnet + float(ufe_statistik.get("offen", 0.0))
+    anfang = zugeordnet - float(sum(ufe.values()))
+    erwartet = anfang + bewegung
+    delta = ende - erwartet
+    quote = abs(delta) / abs(erwartet) if erwartet else 0.0
+    details = [
+        f"Werkstattbestand laut Datei (ohne Serviceauftraege): {_de(ende)}",
+        f"erwartet: Anfangsbestand {_de(anfang)} + gebuchte Bestandsveraenderung "
+        f"{_de(bewegung, True)} = {_de(erwartet)}",
+        f"Unterschied {_de(delta, True)} ({quote * 100:.1f} %)".replace(".", ","),
+    ]
+    if quote > schwelle:
+        details.append(
+            "Der Werkstattbestand passt nicht zur Buchung. Fast immer wurde er nicht am "
+            "Stichtag, sondern spaeter gezogen - dann zeigt er die Auftraege mit ihrem "
+            "heutigen Stand. Bitte den am Stichtag gezogenen Werkstattbestand verwenden.")
+    return _pruefung(
+        "Kostentraeger-Auswertung",
+        "Werkstattbestand passt zur gebuchten Bestandsveraenderung (Konto 1041000)",
+        "abweichung" if quote > schwelle else "ok", erwartet, ende, details)
+
+
 def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_sheet=None,
              pwbs_anfang=None, pwbs_ende=None, pfak_pfade=None, manuelle_zuordnung=None,
              kostentraeger_pfad=None, susa_pfad=None):
@@ -2244,6 +2289,7 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
 
     ufe_warnungen = []
     ufe_statistik = None
+    werkstatt_pruefung = None
     gespeicherter_ab = lade_anfangsbestand(config_dir, jahr)
     # Vor allem anderen: passen die Stichtage zum Zeitraum? Sonst ist jede weitere
     # Pruefung der UFE-Zeile wertlos.
@@ -2260,6 +2306,16 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
             karte=karte, aufgeloest=aufgeloest)
         if ufe_statistik is not None:
             ufe_statistik["hinweise"] = stichtag_hinweise + ufe_statistik.get("hinweise", [])
+        if ufe and kostentraeger_pfad:
+            werkstatt_pruefung = pruefe_werkstattbestand_buchung(
+                kostentraeger_pfad, ufe, ufe_statistik)
+            if werkstatt_pruefung and werkstatt_pruefung["status"] == "abweichung":
+                # Wie bei zu grosser Zuordnungsluecke: lieber keine Zahl als eine falsche.
+                ufe_warnungen.append(
+                    "Der Werkstattbestand passt nicht zur gebuchten Bestandsveraenderung "
+                    "(Kostentraeger-Auswertung, Konto 1041000): "
+                    + " ".join(werkstatt_pruefung["details"]))
+                ufe = None
         if ufe:
             for pg, wert in ufe.items():
                 if pg not in result.columns and abs(wert) > 0.005:
@@ -2292,6 +2348,8 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
     abstimmung = []
     if kostentraeger_pfad:
         abstimmung += abstimmung_kostentraeger(df, kostentraeger_pfad, mapping, pg_config)
+    if werkstatt_pruefung:
+        abstimmung.append(werkstatt_pruefung)
     if susa_pfad:
         abstimmung += abstimmung_susa(susa_pfad, df, mapping, result, ufe_statistik,
                                       bool(pwbs_ende and not ufe_warnungen))
