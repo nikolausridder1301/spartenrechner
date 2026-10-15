@@ -269,11 +269,16 @@ const INFO_TEXTE = {
    Rechner. Sie wird weder hochgeladen noch an Claude oder sonst jemanden gesendet. */
 const PARAM_KEY = "spartenrechner.betriebsparameter";
 
+// Kopie fuer die laufende Sitzung: Darf der Browser nichts speichern (privates
+// Fenster, blockierte Site-Daten), gelten die geladenen Parameter trotzdem, bis die
+// Seite geschlossen wird - sonst blockierte das Pflichtfeld einen gerade geladenen Wert.
+let parameterSitzung = null;
+
 function parameterLesen() {
   try {
-    return localStorage.getItem(PARAM_KEY);
+    return localStorage.getItem(PARAM_KEY) || parameterSitzung;
   } catch (e) {
-    return null;   // privates Fenster oder Site-Daten blockiert
+    return parameterSitzung;   // privates Fenster oder Site-Daten blockiert
   }
 }
 
@@ -288,7 +293,15 @@ function parameterInDateisystem() {
 // ein zusaetzliches Status-Badge war neben der gelb hervorgehobenen Box ein
 // Hervorhebung zu viel.
 function parameterStatusZeigen() {
-  document.getElementById("param-loeschen").style.display = parameterLesen() ? "inline-block" : "none";
+  const da = !!parameterLesen();
+  document.getElementById("param-loeschen").style.display = da ? "inline-block" : "none";
+  // Pflichtfeld: Sind die Parameter schon aus einem frueheren Besuch im Browser
+  // gespeichert, gilt das Feld als erfuellt - und soll auch so aussehen.
+  const zone = document.getElementById("dropzone-param");
+  if (da && !zone.classList.contains("has-file")) {
+    zone.classList.add("has-file");
+    document.getElementById("dropzone-param-text").textContent = "✓ betriebsparameter.xlsx – im Browser hinterlegt";
+  }
 }
 
 /* Nimmt Excel (bevorzugt, weil im Controlling gepflegt) ebenso wie die frueher
@@ -331,6 +344,7 @@ json.dumps(spartenrechnung_core.betriebsparameter_aus_excel("/param_upload${ext}
     return;
   }
   try {
+    parameterSitzung = inhalt;
     localStorage.setItem(PARAM_KEY, inhalt);
   } catch (e) {
     showError("Der Browser konnte die Parameter nicht speichern (privates Fenster?). "
@@ -367,6 +381,7 @@ spartenrechnung_core.schreibe_betriebsparameter_excel(
 
 document.getElementById("param-loeschen").addEventListener("click", () => {
   try {
+    parameterSitzung = null;
     localStorage.removeItem(PARAM_KEY);
   } catch (e) { /* dann war ohnehin nichts gespeichert */ }
   if (pyodide) {
@@ -374,7 +389,7 @@ document.getElementById("param-loeschen").addEventListener("click", () => {
   }
   const zone = document.getElementById("dropzone-param");
   zone.classList.remove("has-file");
-  document.getElementById("dropzone-param-text").textContent = "betriebsparameter.json auswählen";
+  document.getElementById("dropzone-param-text").textContent = "betriebsparameter.xlsx auswählen";
   parameterStatusZeigen();
 });
 
@@ -436,6 +451,12 @@ form.addEventListener("submit", async (e) => {
   }
   if (!pwbsEndeFile) {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
+    return;
+  }
+  if (!parameterLesen()) {
+    showError("Bitte die Betriebsparameter (betriebsparameter.xlsx) laden – ohne sie fehlen "
+      + "Anfangsbestand und Umschlüsselung. Sie werden im Browser gespeichert, das ist "
+      + "in der Regel nur einmal nötig.");
     return;
   }
 
