@@ -8,9 +8,11 @@ Datei `KPTM_Wertsummen_*.xls`).
 
 **[→ Spartenrechner öffnen](https://nikolausridder1301.github.io/spartenrechner/)**
 
-Dateien per Drag & Drop hochladen (KPTM-Rohdaten, Kostenträger-Auswertung, SuSa, Werkstattbestand),
-"Spartenrechnung erstellen" klicken – fertige Excel-Datei zum
-Download. Genau wie ein klassischer Online-Dateikonverter, mit einem
+Dateien per Drag & Drop hochladen (KPTM-Rohdaten, Kostenträger-Auswertung,
+Werkstattbestand, SuSa – alle Pflicht – und einmalig die Betriebsparameter),
+"Spartenrechnung erstellen" klicken – fertige Excel-Datei zum Download. Das Ergebnis
+zeigt oben Ampel, Kennzahlen und Download; Abstimmung mit der Buchhaltung, Abgleich
+mit der GuV, Kennzahlen, Werkstattbestand und Hinweise lassen sich aufklappen. Genau wie ein klassischer Online-Dateikonverter, mit einem
 entscheidenden Unterschied: **es wird nichts hochgeladen.** Die komplette
 Verarbeitung läuft direkt im Browser (Python als WebAssembly via
 [Pyodide](https://pyodide.org)) – die Firmenzahlen verlassen zu keinem
@@ -25,25 +27,26 @@ speichert. Der Quellcode der Seite liegt unter `docs/`.
    ans ERP-System (kumuliert seit Jahresbeginn bis zum gewünschten Stichtag).
    Für die drei Deckungsdifferenzen zusätzlich die **Kostenträger-Auswertung** der
    Buchhaltung (`Kostenträger <Zeitraum>.xls`, Penta, Objekttyp „Kostenträger",
-   nach dem Monatsabschluss gezogen) – sie wird im Ordner automatisch gefunden.
+   nach dem Monatsabschluss gezogen) und für Abstimmung und GuV-Abgleich die **SuSa**
+   (`SuSa <Zeitraum>.csv`) – beide werden im Ordner automatisch gefunden. Der
+   Werkstattbestand wird mit `--pwbs-ende` angegeben.
 2. Skript ausführen:
 
    ```bash
-   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --output output/2026-Q1-Spartenrechnung.xlsx
+   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Jan-Sep --pwbs-ende rohdaten/2026/Jan-Sep/PWBS_Werkstattbestand_011026_Produktgruppe.xls --output output/2026-01-09-Spartenrechnung.xlsx
    ```
 
    Der Zeitraum wird nicht angegeben, sondern aus den Spalten `Geschäftsjahr`
-   und `Periode` des Exports gelesen (`--zeitraum` überschreibt ihn nur).
+   und `Periode` des Exports gelesen (`--zeitraum` überschreibt ihn nur). Die
+   Kommandozeile rechnet auch ohne SuSa (dann ohne Abstimmung mit der FiBu und ohne
+   GuV-Abgleich) und kennt für ältere Werkstattbestände ohne Produktgruppen-Spalte
+   `--pfak`.
 
-   Optional mit automatischem GuV-Kontroll-Check gegen die BWA (siehe unten):
-
-   ```bash
-   python scripts/spartenrechnung.py --rohdaten rohdaten/2026/Q1 --output output/2026-Q1-Spartenrechnung.xlsx --bwa "C:\Users\nikol\Downloads\BWA Perforator 7.2026.xlsx" --bwa-sheet "BWA 03.2026"
-   ```
-
-3. Ergebnis liegt in `output/` – eine schlanke Excel-Datei mit der
-   Spartenrechnung (Sparten als Spalten, GuV-Zeilen als Zeilen) plus einem
-   Hinweise-Sheet.
+3. Ergebnis liegt in `output/`: die Spartenrechnung (Sparten als Spalten,
+   GuV-Zeilen als Zeilen), die Blätter „Abstimmung" und „Abgleich GuV", Hinweise –
+   und die Rohdaten als Datenblätter. **Jede Zahl ist eine Formel** auf diese
+   Datenblätter; die Selbstprüfung oben links in der Spartenrechnung muss 0,00
+   zeigen (`scripts/pruefe_formeln.py` lässt Excel nachrechnen).
 
 ## Was ist automatisiert, was nicht?
 
@@ -97,7 +100,9 @@ python scripts/validate.py --rohdaten rohdaten/2026/Q1 --referenz "referenz/01-0
 
 ## Arbeitsweise beim monatlichen Abschluss
 
-Hochzuladen sind drei Dateien plus – einmal im Jahr – der Anfangsbestand:
+Hochzuladen sind vier Dateien je Zeitraum plus – einmalig, im Browser gespeichert –
+die Betriebsparameter (`betriebsparameter.xlsx`: Anfangsbestand, Zuschlagssätze,
+Umschlüsselung). Alle Felder sind Pflicht:
 
 | Datei | Woher |
 |---|---|
@@ -217,22 +222,15 @@ Ein kumulierter Export des Jahres mischt also beide Strukturen. Das Tool rechnet
 - Ab welchem Jahr umgeschlüsselt wird, steht in `config/produktgruppen.json`
   (`umstellung_ab_jahr`); frühere Jahre bleiben in ihrer gebuchten Struktur.
 
-## BWA-Datei: hilft nur als Kontroll-Check, nicht zur Sparten-Automatisierung
+## BWA-Datei: wird nicht gebraucht
 
-Die Datei `BWA Perforator *.xlsx` (Downloads-Ordner) wurde geprüft. Sie ist eine
-**firmenweite** Betriebswirtschaftliche Auswertung ganz ohne Sparten-Spalte
-(Kategorien wie "Personalkosten", "sbA insgesamt" nur als Gesamtsumme). Damit
-lässt sich Personalaufwand/sbA/Afa **nicht** automatisch auf DP/PB/IT/SR
-verteilen.
-
-Nützlich ist die BWA aber als **Kontroll-Anker**: Die Zeile "Vorläufiges
-Ergebnis" (Spalte "kumuliert") entspricht exakt der Zeile "Ergebnis lt. GuV
-vor Besserungsschein" der bisherigen manuellen Spartenrechnung (für Q1 2026
-auf den Cent geprüft). Mit `--bwa`/`--bwa-sheet` zieht das
-Skript diesen Wert automatisch und zeigt die Differenz zur bottom-up
-berechneten DB III an. Diese Differenz muss weiterhin manuell erklärt werden
-(Sonderposten, "keine Abrechnung BAB", "fehlende Abbildung SuSa in BAB und
-Kostenträger") – das war auch im bisherigen Prozess ein manueller Schritt.
+Die BWA der Buchhaltung ist eine **firmenweite** Auswertung ohne Sparten-Spalte und
+wird aus derselben SuSa abgeleitet, die das Tool ohnehin liest. Den früheren
+manuellen Schritt – die Differenz zwischen DB III und BWA-Ergebnis erklären –
+übernimmt der **Abgleich mit der GuV** (siehe oben): Er trifft die BWA-Zeilen
+„Betriebsergebnis" und „Vorläufiges Ergebnis" centgenau und benennt jeden Posten
+dazwischen. Die Kommandozeile kennt `--bwa`/`--bwa-sheet` noch als einfachen
+Ergebnisvergleich.
 
 ### Was in der Spalte „Summe" fehlt – strukturell, nicht nur beim aktuellen Stand
 
@@ -242,8 +240,8 @@ für Sachkonto-Buchungen ohne Produktgruppe: `712000` Photovoltaik Anlage,
 Weiterberechnung Valluhn, `999999` periodenfremder Ertrag. Keiner dieser fünf
 Codes taucht in KPTM als Produktgruppe auf – das Tool kann sie also aus
 keinem Zeitraum ableiten. „Summe" ist deshalb die **Summe über die Sparten**,
-nicht das Gesamtunternehmensergebnis, und der BWA-Vergleich oben enthält diese
-Posten mit, nicht nur die Deckungsdifferenzen.
+nicht das Gesamtunternehmensergebnis. Im Abgleich mit der GuV stecken diese
+Posten in den Zeilen „Kosten" und „neutrales Ergebnis".
 
 Konkrete Beträge je Periode stehen nicht hier (öffentliches Repository), sondern
 in `intern/HERLEITUNG.md`.
@@ -252,13 +250,17 @@ in `intern/HERLEITUNG.md`.
 
 ```
 docs/                            Weboberfläche (GitHub Pages) – Kernlogik + UI
-  spartenrechnung_core.py          gemeinsame Berechnungslogik (Web + CLI)
+  spartenrechnung_core.py          gemeinsame Berechnungslogik (Web + CLI), inkl.
+                                   Abstimmung und Abgleich mit der GuV
+  herleitung_excel.py              Datenblätter und Formeln der Excel-Ausgabe
   index.html / app.js / style.css  Oberfläche (Pyodide, läuft im Browser)
   config/                          Kopie der Mapping-Tabellen für den Browser
 scripts/spartenrechnung.py       CLI-Wrapper um dieselbe Kernlogik
 scripts/validate.py              zellgenauer Abgleich gegen eine manuelle Referenz
+scripts/pruefe_formeln.py        lässt Excel die Ausgabe nachrechnen (Formel = Programm?)
 scripts/umstellung_neue_struktur.py  einmalig: Betriebsparameter auf neue Produktgruppen
-config/                          Mapping-Tabellen (Kostenart→Zeile, Produktgruppen)
+config/                          Mapping-Tabellen (Kostenart→Zeile, Produktgruppen,
+                                 Deckungsdifferenzen, Kontenzuordnung GuV-Abgleich)
 
 intern/                          ← eigenes, PRIVATES Repository (nicht hier drin)
   HERLEITUNG.md                    Herleitung jeder Zeile inkl. Belegen
