@@ -1862,7 +1862,10 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
     if abstimmung:
         _abstimmung_blatt(wb, abstimmung, zeitraum)
     if guv:
-        _guv_blatt(wb, guv, zeitraum)
+        guv_pos = _guv_blatt(wb, guv, zeitraum)
+        if herleitung is not None:
+            # Die Herleitung setzt im Blatt 'Abgleich GuV' Formeln auf die Datenblaetter.
+            herleitung = dict(herleitung, guv={"pos": guv_pos, "susa_pfad": guv["susa_pfad"]})
 
     # Rohdaten und Formeln anhaengen, damit jede Zahl rueckverfolgbar ist.
     # Schlaegt das fehl, bleibt die Datei mit den reinen Werten erhalten - die
@@ -2245,29 +2248,31 @@ def guv_abgleich(susa_pfad, kptm_df, mapping, result):
     ergebnis_guv = float(guv["betrag"].sum())
 
     betrieb = [
-        ("Erlöse ohne Sparte (Abfallverwertung, Sonstiges, Skonti)", g("erloese") - S("erloese")),
-        ("Bestandsveränderung FE: FiBu gegen Kostenrechnung", g("fe") - S("bestand_fe")),
-        ("Bestandsveränderung UFE: FiBu gegen Sparten", g("ufe") - S("bestand_ufe")),
-        ("Sonstige betriebliche Erträge (nicht auf Sparten)", g("sbe")),
+        ("Erlöse ohne Sparte (Abfallverwertung, Sonstiges, Skonti)", g("erloese") - S("erloese"), "erloese"),
+        ("Bestandsveränderung FE: FiBu gegen Kostenrechnung", g("fe") - S("bestand_fe"), "fe"),
+        ("Bestandsveränderung UFE: FiBu gegen Sparten", g("ufe") - S("bestand_ufe"), "ufe"),
+        ("Sonstige betriebliche Erträge (nicht auf Sparten)", g("sbe"), "sbe"),
         ("Kosten (Material, Personal, sbA, Abschreibungen): FiBu gegen Kostenrechnung",
-         g("kosten") + kosten_kore),
+         g("kosten") + kosten_kore, "kosten"),
     ]
-    betriebsergebnis = db3 + sum(b for _, b in betrieb)
-    bruecke = [("DB III (Summe der Sparten)", db3, "summe")]
-    bruecke += [(t, b, "posten") for t, b in betrieb]
-    bruecke.append(("Betriebsergebnis lt. GuV (BWA)", betriebsergebnis, "summe"))
+    betriebsergebnis = db3 + sum(b for _, b, _ in betrieb)
+    bruecke = [("DB III (Summe der Sparten)", db3, "summe", "db3")]
+    bruecke += [(t, b, "posten", k) for t, b, k in betrieb]
+    bruecke.append(("Betriebsergebnis lt. GuV (BWA)", betriebsergebnis, "summe", "betriebsergebnis"))
     bruecke += [
-        ("Neutrales Ergebnis (Anlagenverkauf, Kursdifferenzen, periodenfremd)", g("neutral"), "posten"),
-        ("Zinsergebnis", g("zins"), "posten"),
-        ("Steuern", g("steuern"), "posten"),
+        ("Neutrales Ergebnis (Anlagenverkauf, Kursdifferenzen, periodenfremd)", g("neutral"),
+         "posten", "neutral"),
+        ("Zinsergebnis", g("zins"), "posten", "zins"),
+        ("Steuern", g("steuern"), "posten", "steuern"),
     ]
     rest = ergebnis_guv - betriebsergebnis - g("neutral") - g("zins") - g("steuern")
     # Bliebe hier etwas, waere ein Konto in keinem Posten - z.B. aktivierte
-    # Eigenleistung, die in der Betriebsleistung steckt, aber kein GuV-Konto ist.
-    if abs(rest) >= 0.01:
-        bruecke.append(("Nicht zugeordneter Rest", rest, "rest"))
+    # Eigenleistung, die in der Betriebsleistung steckt, aber kein GuV-Konto ist. Die
+    # Zeile steht immer da (im Excel-Blatt als Formel, die 0,00 zeigen muss); die
+    # Oberflaeche blendet sie aus, solange sie null ist.
+    bruecke.append(("Nicht zugeordneter Rest (muss 0,00 sein)", rest, "rest", "rest"))
     bruecke.append(("Ergebnis lt. GuV (entspricht „Vorläufiges Ergebnis“ der BWA)",
-                    ergebnis_guv, "summe"))
+                    ergebnis_guv, "summe", "ergebnis"))
 
     # Erloese je Bereich: GuV nach Konto, Sparten nach Produktgruppe
     guv["bereich"] = [_bereich_des_kontos(k) for k in guv.index]
@@ -2308,7 +2313,9 @@ def guv_abgleich(susa_pfad, kptm_df, mapping, result):
                        "posten": namen[z["posten"]], "guv": round(float(z["betrag"]), 2),
                        "direkt": round(d, 2), "rest": round(float(z["betrag"]) - d, 2)})
 
-    return {"bruecke": [{"text": t, "betrag": round(b, 2), "art": a} for t, b, a in bruecke],
+    return {"bruecke": [{"text": t, "betrag": round(b, 2), "art": a, "key": k}
+                        for t, b, a, k in bruecke],
+            "susa_pfad": susa_pfad,
             "ergebnis_guv": round(ergebnis_guv, 2), "db3": round(db3, 2),
             "betriebsergebnis": round(betriebsergebnis, 2),
             "bereiche": bereiche, "abweichende_buchungen": abweichend[:40],
@@ -2323,8 +2330,10 @@ def _guv_blatt(wb, guv, zeitraum):
         "Vom DB III der Sparten zum Ergebnis der GuV. Grundlage ist die Summen- und "
         "Saldenliste; das Ergebnis entspricht dem 'Vorläufigen Ergebnis' der BWA. Jedes "
         "GuV-Konto gehört genau einem Posten an.")).font = Font(italic=True, size=9)
+    pos = {"bruecke": {}, "bereiche": [], "abweichend": [], "konten": []}
     r = 4
     for b in guv["bruecke"]:
+        pos["bruecke"][b["key"]] = r
         fett = b["art"] == "summe"
         z1 = ws.cell(row=r, column=1, value=("" if fett else "  ") + b["text"])
         z2 = ws.cell(row=r, column=2, value=b["betrag"])
@@ -2334,7 +2343,7 @@ def _guv_blatt(wb, guv, zeitraum):
             if fett:
                 z.font = FONT_BOLD
                 z.fill = FILL_FORMULA
-            if b["art"] == "rest":
+            if b["art"] == "rest" and abs(b["betrag"]) >= 0.01:
                 z.fill = FILL_MANUAL
         r += 1
 
@@ -2346,6 +2355,7 @@ def _guv_blatt(wb, guv, zeitraum):
         z.fill, z.font = FILL_HEADER, FONT_HEADER
     r += 1
     for b in guv["bereiche"]:
+        pos["bereiche"].append((r, b["familie"]))
         for j, w in enumerate((b["name"] + (f" ({b['familie']}*)" if b["familie"] else ""),
                                b["guv"], b["sparten"], b["delta"]), start=1):
             z = ws.cell(row=r, column=j, value=w)
@@ -2364,6 +2374,7 @@ def _guv_blatt(wb, guv, zeitraum):
             z.fill, z.font = FILL_HEADER, FONT_HEADER
         r += 1
         for a in guv["abweichende_buchungen"]:
+            pos["abweichend"].append((r, a["konto"], a["produktgruppe"]))
             for j, w in enumerate((a["konto"], a["bezeichnung"], a["produktgruppe"], a["betrag"]), start=1):
                 z = ws.cell(row=r, column=j, value=w)
                 z.border = BORDER
@@ -2382,6 +2393,7 @@ def _guv_blatt(wb, guv, zeitraum):
         z.fill, z.font = FILL_HEADER, FONT_HEADER
     r += 1
     for k in guv["konten"]:
+        pos["konten"].append((r, k["konto"]))
         for j, w in enumerate((k["konto"], k["bezeichnung"], k["posten"], k["guv"], k["direkt"], k["rest"]), start=1):
             z = ws.cell(row=r, column=j, value=w)
             z.border = BORDER
@@ -2390,6 +2402,7 @@ def _guv_blatt(wb, guv, zeitraum):
         r += 1
     for sp, b in (("A", 70), ("B", 34), ("C", 22), ("D", 16), ("E", 18), ("F", 16)):
         ws.column_dimensions[sp].width = b
+    return pos
 
 
 def _abstimmung_blatt(wb, pruefungen, zeitraum):
@@ -2668,8 +2681,8 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         "struktur": ({k: v for k, v in struktur.items() if k != "paare"} if struktur else None),
         "naeherung_zellen": len(naeherung_zellen),
         "abstimmung": abstimmung,
-        "guv": ({k: v for k, v in guv.items() if k != "konten"} | {"konten": guv["konten"][:25]}
-                if guv else None),
+        "guv": ({k: v for k, v in guv.items() if k not in ("konten", "susa_pfad")}
+                | {"konten": guv["konten"][:25]} if guv else None),
         "susa_geladen": bool(susa_pfad),
         "db3_summe": float(result.loc["db3", "Summe"]),
         "erloese_summe": float(result.loc["erloese", "Summe"]),

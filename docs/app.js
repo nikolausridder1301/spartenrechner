@@ -753,6 +753,7 @@ function showResult(summary, url, filename) {
   if (guv) {
     let g = `<table class="guv-tabelle"><tbody>`;
     for (const b of guv.bruecke) {
+      if (b.art === "rest" && Math.abs(b.betrag) < 0.01) continue;   // nur zeigen, wenn nicht null
       g += `<tr class="guv-${b.art}"><td>${esc(b.text)}</td><td>${eurF(b.betrag)} €</td></tr>`;
     }
     g += `</tbody></table>`;
@@ -797,7 +798,7 @@ function showResult(summary, url, filename) {
     g += `</tbody></table></details>`;
 
     html += bereich("ab-guv", "Abgleich mit der GuV", `Ergebnis ${eurF(guv.ergebnis_guv)} €`,
-      guv.bruecke.some((b) => b.art === "rest") ? "gelb" : "neutral", g, false);
+      guv.bruecke.some((b) => b.art === "rest" && Math.abs(b.betrag) >= 0.01) ? "gelb" : "neutral", g, false);
   }
 
   let kennzahlen = summaryZeile("Rohdaten-Zeilen verarbeitet", summary.zeilen.toLocaleString("de-DE"), "zeilen");

@@ -22,6 +22,8 @@ Aufbau der erzeugten Mappe:
                            Handzuordnung zusammengefuehrte Tabelle - deshalb ein
                            eigenes Blatt statt einer Spalte in den Rohdaten
     Betriebsparameter      Anfangsbestaende je Sparte
+    Daten_SuSa             nur mit SuSa: die GuV-Konten der FiBu, mit Formelspalten fuer
+                           Posten und Bereich. Das Blatt 'Abgleich GuV' summiert darueber
     Umschluesselung        nur im Umstellungsjahr: Artikel -> alte/neue Produktgruppe
                            (Reorganisation 2026). Die Spalte 'Produktgruppe' in
                            'Daten_KPTM' und die Sparte im Werkstattbestand schlagen
@@ -321,7 +323,7 @@ def _kptm_blatt(wb, df, mapping, bereiche, umschl=None):
             # Rohspalten - das Blatt 'Fertigungsstunden' summiert direkt darueber,
             # nicht ueber die Hilfsspalten: dort geht es um ISWF/ISMF der
             # Kostenstellen, nicht um die Zuordnung auf GuV-Zeilen.
-            "kostenart": s_ka, "wertart": s_wa, "wert": s_wert,
+            "kostenart": s_ka, "wertart": s_wa, "wert": s_wert, "pg": s_pg,
             "auftragsart": spalten.get("Auftragsart")}
 
 
@@ -523,7 +525,7 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
                           nach_artikel=None, anfangsbestand=None,
                           manuelle_zuordnung=None, ufe_berechnet=False,
                           kostentraeger=None, umschluesselung=None, aufgeloest=None,
-                          anfangsbestand_naeherung=None):
+                          anfangsbestand_naeherung=None, guv=None):
     """Haengt an eine bestehende Mappe die Datenblaetter an und ersetzt die Werte
     im Blatt 'Spartenrechnung' durch Formeln, die auf diese Blaetter zeigen.
 
@@ -614,6 +616,11 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
         pwbs_e=pwbs_e, pwbs_a=pwbs_a,
         anfangsbestand_blatt=bool(anfangsbestand), ufe_berechnet=ufe_berechnet, kt=kt)
 
+    # Abgleich mit der GuV: SuSa als Datenblatt, das Blatt 'Abgleich GuV' als Formeln.
+    if guv and "Abgleich GuV" in wb.sheetnames:
+        susa = _susa_blatt(wb, guv["susa_pfad"], mapping)
+        _verformele_guv(wb, guv["pos"], susa, kptm, mapping)
+
     if "Hinweise" in wb.sheetnames:
         ws = wb["Hinweise"]
         r = ws.max_row + 2
@@ -642,6 +649,10 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
                "  Zeilen OHNE Formel - und warum:",
                "    Die drei Deckungsdifferenzen  stammen aus der Kostentraeger-Auswertung der",
                "                               Buchhaltung, die hier nicht mitgegeben wurde.", ""]),
+            *(["  Abgleich GuV: Jede Zahl ist eine Formel - SUMMEWENNS über 'Daten_SuSa' (Spalte",
+               "  'Posten' ordnet jedes GuV-Konto per Regel einem Posten zu), dazu Bezüge auf die",
+               "  Spartenrechnung und auf 'Daten_KPTM'. Die Zeile 'Nicht zugeordneter Rest' muss 0,00 zeigen.",
+               ""] if guv else []),
             *(["  Neue Produktgruppen-Struktur: In 'Daten_KPTM' ist die Spalte 'Produktgruppe' dort,",
                "  wo eine Umschluesselung moeglich ist, eine Formel auf das Blatt 'Umschluesselung';",
                "  die gebuchte Gruppe steht daneben. Im Werkstattbestand bringt die Spalte",
@@ -655,6 +666,155 @@ def baue_herleitungsmappe(wb, result, mapping, produktgruppen, kptm_df,
             ws.cell(row=r, column=1, value=zeile)
             r += 1
     return anzahl
+
+
+def _susa_blatt(wb, susa_pfad, mapping):
+    """Die GuV-Konten der Summen- und Saldenliste, mit drei Hilfsspalten als Formel:
+    Betrag (Ertrag positiv), Posten der Bruecke und Bereich (bei Erloesen). Die Regeln
+    stehen rechts daneben - aus der Konfiguration 'guv_abgleich'."""
+    import spartenrechnung_core as core
+    susa, _ = core.lade_susa(susa_pfad)
+    if (susa["typ"] != "").any():
+        guv = susa[susa["typ"].isin(["Ertrag", "Aufwand"])]
+    else:
+        guv = susa[susa.index.str[:1].isin(list("45678"))]
+    df = pd.DataFrame({"Konto": [str(k) for k in guv.index],
+                       "Bezeichnung": list(guv["beschreibung"]),
+                       "Typ": list(guv["typ"]),
+                       "Saldo": [float(v) for v in guv["saldo"]]})
+    ws, erste = _blatt_mit_daten(
+        wb, "Daten_SuSa", df,
+        "Die GuV-Konten der Summen- und Saldenliste (FiBu). Die gelben Spalten sind Formeln: "
+        "Betrag mit Ertrag positiv, der Posten der Überleitung im Blatt 'Abgleich GuV' und - "
+        "bei Erlösen - der Bereich wie in der BWA. Rechts die Regeln für die Posten.")
+    letzte = erste + len(df) - 1
+    kopf = erste - 1
+    for k, t in enumerate(("Betrag", "Posten", "Bereich")):
+        z = ws.cell(row=kopf, column=5 + k, value=t)
+        z.font, z.fill = Font(bold=True), FILL_HILFS
+
+    cfg = mapping.get("guv_abgleich", {})
+    listen = (("neutral", "neutral"), ("sonstige_ertraege", "sbe"), ("steuern", "steuern"))
+    spalten = {}
+    for i, (schluessel, name) in enumerate(listen):
+        sp = get_column_letter(10 + i)
+        spalten[name] = sp
+        z = ws.cell(row=kopf, column=10 + i, value=f"Konten '{name}'")
+        z.font, z.fill = FONT_WEISS, FILL_DATEN
+        for j, konto in enumerate(cfg.get(schluessel, []), start=erste):
+            ws.cell(row=j, column=10 + i, value=str(konto))
+        ws.column_dimensions[sp].width = 14
+
+    def anfang(praefixe, zelle):
+        teile = [f'LEFT({zelle},{len(p)})="{p}"' for p in praefixe]
+        return teile[0] if len(teile) == 1 else "OR(" + ",".join(teile) + ")"
+
+    erloes = tuple(cfg.get("erloese_praefixe", ["42", "44", "45", "47", "483"]))
+    zins = tuple(cfg.get("zins_praefixe", ["73", "87"]))
+    for r in range(erste, letzte + 1):
+        a = f"A{r}"
+        ws.cell(row=r, column=5, value=f"=-D{r}").number_format = "#,##0.00"
+        ws.cell(row=r, column=6, value=(
+            f'=IF(LEFT({a},4)="4825","fe",IF(LEFT({a},4)="4814","ufe",'
+            f'IF(COUNTIF(${spalten["neutral"]}:${spalten["neutral"]},{a})>0,"neutral",'
+            f'IF(COUNTIF(${spalten["sbe"]}:${spalten["sbe"]},{a})>0,"sbe",'
+            f'IF(COUNTIF(${spalten["steuern"]}:${spalten["steuern"]},{a})>0,"steuern",'
+            f'IF({anfang(zins, a)},"zins",IF({anfang(erloes, a)},"erloese","kosten")))))))'))
+        # Bereich wie in der BWA - nur fuer Erloese, sonst "-"
+        bereich = '"-"'
+        for _, fam, praefixe, fracht in reversed(core.GUV_BEREICHE):
+            if fracht:
+                bereich = (f'IF(AND(OR(LEFT({a},3)="452",LEFT({a},3)="453"),RIGHT({a},3)="{fracht}"),'
+                           f'"{fam}",{bereich})')
+            bereich = f'IF({anfang(praefixe, a)},"{fam}",{bereich})'
+        ws.cell(row=r, column=7, value=f'=IF(F{r}="erloese",{bereich},"-")')
+        ws.cell(row=r, column=4).number_format = "#,##0.00"
+    for sp, b in (("A", 11), ("B", 40), ("C", 9), ("D", 15), ("E", 15), ("F", 10), ("G", 9)):
+        ws.column_dimensions[sp].width = b
+    ws.auto_filter.ref = f"A{kopf}:G{letzte}"
+    b = lambda sp: f"'Daten_SuSa'!${sp}${erste}:${sp}${letzte}"
+    return {"konto": b("A"), "betrag": b("E"), "posten": b("F"), "bereich": b("G")}
+
+
+def _verformele_guv(wb, pos, susa, kptm, mapping):
+    """Ersetzt die Werte im Blatt 'Abgleich GuV' durch Formeln auf 'Daten_SuSa',
+    'Daten_KPTM' und das Blatt 'Spartenrechnung'."""
+    ws = wb["Abgleich GuV"]
+    sr = wb["Spartenrechnung"]
+    # Kopfzeile, Summenspalte und Spartenspalten der Spartenrechnung
+    kopf = summe = None
+    for r in range(1, 12):
+        for c in range(1, 40):
+            if sr.cell(row=r, column=c).value == "Summe":
+                kopf, summe = r, c
+                break
+        if kopf:
+            break
+    sparten = [c for c in range(summe + 1, 60) if sr.cell(row=kopf, column=c).value]
+    erste_sp, letzte_sp = get_column_letter(min(sparten)), get_column_letter(max(sparten))
+    labels = mapping["zeilen_labels"]
+
+    def zeile(key):
+        text = str(labels.get(key, key)).strip()
+        for r in range(kopf + 1, kopf + 60):
+            v = sr.cell(row=r, column=1).value
+            if v and str(v).strip().split("  (")[0].strip() == text:
+                return r
+        raise KeyError(key)
+
+    S = lambda key: f"Spartenrechnung!${get_column_letter(summe)}${zeile(key)}"
+    sumifs = lambda posten: f'SUMIFS({susa["betrag"]},{susa["posten"]},"{posten}")'
+    br = pos["bruecke"]
+    formeln = {
+        "db3": f"={S('db3')}",
+        "erloese": f"={sumifs('erloese')}-{S('erloese')}",
+        "fe": f"={sumifs('fe')}-{S('bestand_fe')}",
+        "ufe": f"={sumifs('ufe')}-{S('bestand_ufe')}",
+        "sbe": f"={sumifs('sbe')}",
+        "kosten": f"={sumifs('kosten')}+({S('betriebsleistung')}-{S('db3')})",
+        "betriebsergebnis": f"=B{br['db3']}+SUM(B{br['erloese']}:B{br['kosten']})",
+        "neutral": f"={sumifs('neutral')}",
+        "zins": f"={sumifs('zins')}",
+        "steuern": f"={sumifs('steuern')}",
+        "ergebnis": f"=SUM({susa['betrag']})",
+    }
+    formeln["rest"] = (f"=B{br['ergebnis']}-B{br['betriebsergebnis']}-B{br['neutral']}"
+                       f"-B{br['zins']}-B{br['steuern']}")
+    for key, r in br.items():
+        ws.cell(row=r, column=2, value=formeln[key]).number_format = "#,##0.00"
+
+    # Erloese je Bereich: GuV nach Konto (Daten_SuSa), Sparten nach Produktgruppe
+    zeile_erl = zeile("erloese")
+    for r, fam in pos["bereiche"]:
+        ws.cell(row=r, column=2, value=(
+            f'=SUMIFS({susa["betrag"]},{susa["posten"]},"erloese",{susa["bereich"]},"{fam or "-"}")'))
+        if not fam:
+            # Erloese ohne Bereich gehoeren zu keiner Sparte - keine Zahl, keine Formel.
+            ws.cell(row=r, column=3, value="–").alignment = Alignment(horizontal="right")
+            ws.cell(row=r, column=4, value=f"=B{r}")
+        if fam:
+            ws.cell(row=r, column=3, value=(
+                f'=SUMPRODUCT((LEFT(Spartenrechnung!${erste_sp}${kopf}:${letzte_sp}${kopf},2)="{fam}")'
+                f'*Spartenrechnung!${erste_sp}${zeile_erl}:${letzte_sp}${zeile_erl})'))
+            ws.cell(row=r, column=4, value=f"=B{r}-C{r}")
+        for c in (2, 3, 4):
+            ws.cell(row=r, column=c).number_format = "#,##0.00"
+
+    k = f"'{kptm['blatt']}'!$"
+    von, bis = kptm["erste"], kptm["letzte"]
+    wert = f"{k}{kptm['wert']}${von}:${kptm['wert']}${bis}"
+    art = f"{k}{kptm['kostenart']}${von}:${kptm['kostenart']}${bis}"
+    pg = f"{k}{kptm['pg']}${von}:${kptm['pg']}${bis}"
+    for r, konto, produktgruppe in pos["abweichend"]:
+        ws.cell(row=r, column=4, value=f'=-SUMIFS({wert},{art},A{r},{pg},C{r})').number_format = "#,##0.00"
+
+    # Konten: GuV aus Daten_SuSa, direkt auf Sparten aus Daten_KPTM (mit Produktgruppe)
+    for r, konto in pos["konten"]:
+        ws.cell(row=r, column=4, value=f'=SUMIFS({susa["betrag"]},{susa["konto"]},A{r})')
+        ws.cell(row=r, column=5, value=f'=-SUMIFS({wert},{art},A{r},{pg},"<>")')
+        ws.cell(row=r, column=6, value=f"=D{r}-E{r}")
+        for c in (4, 5, 6):
+            ws.cell(row=r, column=c).number_format = "#,##0.00"
 
 
 def _verformele_spartenrechnung(wb, result, mapping, produktgruppen, kptm, kontrolle,
