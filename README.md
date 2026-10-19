@@ -136,6 +136,23 @@ Auswertung und SuSa müssen denselben Zeitraum abdecken wie der KPTM-Export, der
 Werkstattbestand den passenden Stichtag tragen (Dateiname, z.B. `..._011026` für
 Jan–Sep).
 
+### Abgleich mit der GuV
+
+Mit SuSa zeigt das Tool zusätzlich die Überleitung vom **DB III der Sparten** zum
+**Ergebnis lt. GuV** – im Browser und im Blatt „Abgleich GuV" der Excel-Datei:
+
+DB III → Erlöse ohne Sparte → Bestandsveränderung FE und UFE (FiBu gegen
+Kostenrechnung) → sonstige betriebliche Erträge → Kosten (FiBu gegen Kostenrechnung)
+= **Betriebsergebnis** → neutrales Ergebnis → Zinsen → Steuern = **Ergebnis lt. GuV**.
+
+Jedes GuV-Konto der SuSa gehört genau einem Posten an. Welche Konten die BWA als
+neutral, Zinsen, Steuern oder sonstige Erträge führt, steht in
+`config/kostenart_mapping.json` (`guv_abgleich`); damit werden die BWA-Zeilen
+„Betriebsergebnis" und „Vorläufiges Ergebnis" für Q1 und Jan–Sep 2026 centgenau
+getroffen. Die BWA-Datei selbst wird nicht gebraucht – sie ist aus derselben SuSa
+abgeleitet. Dazu: Erlöse je Bereich (GuV nach Konto, Sparten nach Produktgruppe) mit
+den Buchungen, die die Unterschiede erklären, und alle GuV-Konten im Einzelnen.
+
 ### Werkstattbestand: mit Produktgruppe, am Stichtag
 
 Die Zeile **Bestandsveränderung UFE** braucht für jeden offenen Fertigungsauftrag

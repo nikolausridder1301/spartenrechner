@@ -289,5 +289,41 @@
       "sign": -1
     }
   },
-  "deckungsdifferenz_umlage_hinweis": "Ordnet die Umlage-Kostenarten der Kostentraeger-Auswertung ('U' + Kostenstellennummer, Bezeichnung 'Umlage DDIFF ...') den drei Deckungsdifferenz-Zeilen zu. Schluessel ist der Anfang der Kostenstellennummer; es gilt der LAENGSTE passende Eintrag, deshalb steht '218' (QS) vor '21' (uebrige Fertigung). Die Zuordnung folgt dem Kostenstellenplan und der Beschriftung der Referenzrechnung: 'MGK Deckungsdifferenz (Lager, Einkauf; QS)'. Verifiziert an Q1 2026: FEK- und MGK-Deckungsdifferenz 16 von 16 Sparten centgenau, VVGK 13 von 16 - die drei uebrigen widersprechen in der Referenz ihrer eigenen Zeile 'VVGK nach Deckungsdifferenz'. Kommt eine Umlage-Kostenart vor, die hier keinen Eintrag trifft, wird sie mit Betrag gemeldet statt still uebergangen. Vorzeichen: Die Deckungsdifferenzen werden vom Ergebnis ABGEZOGEN (positiv = Unterdeckung = Kosten), die Zeile 'Sonderposten' wird zum DB III ADDIERT - Kosten stehen dort also negativ, daher sign -1."
+  "deckungsdifferenz_umlage_hinweis": "Ordnet die Umlage-Kostenarten der Kostentraeger-Auswertung ('U' + Kostenstellennummer, Bezeichnung 'Umlage DDIFF ...') den drei Deckungsdifferenz-Zeilen zu. Schluessel ist der Anfang der Kostenstellennummer; es gilt der LAENGSTE passende Eintrag, deshalb steht '218' (QS) vor '21' (uebrige Fertigung). Die Zuordnung folgt dem Kostenstellenplan und der Beschriftung der Referenzrechnung: 'MGK Deckungsdifferenz (Lager, Einkauf; QS)'. Verifiziert an Q1 2026: FEK- und MGK-Deckungsdifferenz 16 von 16 Sparten centgenau, VVGK 13 von 16 - die drei uebrigen widersprechen in der Referenz ihrer eigenen Zeile 'VVGK nach Deckungsdifferenz'. Kommt eine Umlage-Kostenart vor, die hier keinen Eintrag trifft, wird sie mit Betrag gemeldet statt still uebergangen. Vorzeichen: Die Deckungsdifferenzen werden vom Ergebnis ABGEZOGEN (positiv = Unterdeckung = Kosten), die Zeile 'Sonderposten' wird zum DB III ADDIERT - Kosten stehen dort also negativ, daher sign -1.",
+  "guv_abgleich": {
+    "_hinweis": "Abgleich mit der GuV: welche Konten der SuSa die BWA als sonstige betriebliche Erträge, neutrales Ergebnis, Zinsen und Steuern führt. Abgeleitet aus der BWA Jan-Sep und Q1 2026 - mit diesen Listen trifft die Brücke die BWA-Zeilen 'Betriebsergebnis', 'neutrales Ergebnis', 'Zinsergebnis' und 'Vorläufiges Ergebnis' in beiden Zeiträumen centgenau. Kommt ein neues Konto dieser Art hinzu, hier eintragen - sonst zählt es zu den Kosten.",
+    "erloese_praefixe": [
+      "42",
+      "44",
+      "45",
+      "47",
+      "483"
+    ],
+    "sonstige_ertraege": [
+      "4841000",
+      "4925000",
+      "4972000"
+    ],
+    "neutral": [
+      "4843000",
+      "4855000",
+      "4900000",
+      "4901000",
+      "4906000",
+      "4930000",
+      "4940000",
+      "6880000",
+      "6881000",
+      "6895000",
+      "6969001",
+      "7501000"
+    ],
+    "zins_praefixe": [
+      "73",
+      "87"
+    ],
+    "steuern": [
+      "7652000"
+    ]
+  }
 }

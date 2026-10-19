@@ -1561,7 +1561,7 @@ def _diagramm(ws, result, mapping, zeitraum, zeilen_nr, cols, start_zeile):
 def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_sheet=None,
                  stunden_df=None, unproduktiv=None, herleitung=None, pg_bezeichnungen=None,
                  ufe_warnungen=None, zeilen_klasse=None, deckungsdifferenzen=None,
-                 naeherung_zellen=None, struktur=None, abstimmung=None):
+                 naeherung_zellen=None, struktur=None, abstimmung=None, guv=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Spartenrechnung"
@@ -1861,6 +1861,8 @@ def write_output(result, mapping, zeitraum, out_path, bwa_ergebnis=None, bwa_she
 
     if abstimmung:
         _abstimmung_blatt(wb, abstimmung, zeitraum)
+    if guv:
+        _guv_blatt(wb, guv, zeitraum)
 
     # Rohdaten und Formeln anhaengen, damit jede Zahl rueckverfolgbar ist.
     # Schlaegt das fehl, bleibt die Datei mit den reinen Werten erhalten - die
@@ -2058,6 +2060,7 @@ def lade_susa(pfad):
         "beschreibung": roh.get("Beschreibung", pd.Series([""] * len(roh))).fillna(""),
         "anfang": zahl(roh["Anf.-Saldo"]),
         "saldo": zahl(roh["Saldo"]),
+        "typ": roh.get("Typ", pd.Series([""] * len(roh))).fillna("").astype(str).str.strip(),
     }).dropna(subset=["konto"]).set_index("konto")
     bis = None
     if "Jahr bis" in roh.columns:
@@ -2145,6 +2148,248 @@ def abstimmung_susa(susa_pfad, kptm_df, mapping, result, ufe_statistik, ufe_bere
                 "FiBu (SuSa)", "Hinterlegter Anfangsbestand gegen FiBu zum 01.01.",
                 "ok" if abs(ab_delta) < 1.0 else "hinweis", fibu_anfang, ab_tool, details))
     return pruefungen
+
+
+# ---------------------------------------------------------------------------
+# Abgleich mit der GuV
+# ---------------------------------------------------------------------------
+# Bruecke vom DB III der Sparten zum Ergebnis der GuV, gerechnet aus der SuSa. Die BWA
+# der Buchhaltung ist aus derselben SuSa abgeleitet - geprueft fuer Jan-Sep 2026:
+# 'Vorlaeufiges Ergebnis' und die Erloese je Bereich stimmen centgenau. Deshalb wird
+# die BWA-Datei selbst nicht gebraucht.
+#
+# Jedes GuV-Konto der SuSa gehoert genau einem Posten an. Ein Rest am Ende ist deshalb
+# ein echter Befund (z.B. ein Konto, das keinem Posten zugeordnet werden konnte), keine
+# Rechenluecke.
+
+# Kontenbereiche wie in der BWA der Buchhaltung (dort 'Umsatzerloese').
+GUV_ERLOES_PRAEFIXE = ("42", "44", "45", "47", "483")
+GUV_FE_PRAEFIXE = ("4825",)          # Bestandsveraenderung fertige Erzeugnisse
+GUV_UFE_PRAEFIXE = ("4814",)         # Bestandsveraenderung unfertige Erzeugnisse
+GUV_KOSTEN_PRAEFIXE = ("5", "6", "7")  # Material, Personal, sbA, Abschreibungen, Steuern
+
+# Erloese je Bereich der BWA -> Spartenfamilie. Frachterloese (452/453...) tragen den
+# Bereich in den letzten drei Stellen.
+GUV_BEREICHE = [
+    ("Bohrstangen", "DP", ("4440",), "400"),
+    ("Horizontalbohrtechnik", "PB", ("4460",), "710"),
+    ("Injektionstechnik", "IT", ("4470",), "060"),
+    ("Schneidrollen", "SR", ("4480",), None),
+]
+
+
+def _bereich_des_kontos(konto):
+    for name, familie, praefixe, fracht in GUV_BEREICHE:
+        if konto.startswith(praefixe):
+            return familie
+        if fracht and konto[:3] in ("452", "453") and konto.endswith(fracht):
+            return familie
+    return None
+
+
+def guv_abgleich(susa_pfad, kptm_df, mapping, result):
+    """Bruecke DB III (Sparten) -> Ergebnis lt. GuV, dazu Erloese je Bereich und Konten.
+
+    Liefert ein dict fuer Oberflaeche und Excel-Blatt:
+      bruecke:  [(text, betrag, art)]  art = 'summe' | 'posten' | 'rest'
+      bereiche: [(name, familie, guv, sparten, delta)]
+      abweichende_buchungen: [dict]  Erloesbuchungen, deren Konto zu einem anderen
+                                     Bereich gehoert als ihre Produktgruppe
+      konten:   [dict]  je GuV-Konto: Posten, GuV, direkt auf Sparten gebucht, Rest
+    """
+    susa, _ = lade_susa(susa_pfad)
+    if (susa["typ"] != "").any():
+        guv = susa[susa["typ"].isin(["Ertrag", "Aufwand"])].copy()
+    else:   # Export ohne Spalte 'Typ': Kontenklassen 4-8
+        guv = susa[susa.index.str[:1].isin(list("45678"))].copy()
+    # Ertrag positiv, Aufwand negativ - wie in der BWA
+    guv["betrag"] = -guv["saldo"]
+
+    cfg = mapping.get("guv_abgleich", {})
+    erloes_praefixe = tuple(cfg.get("erloese_praefixe", GUV_ERLOES_PRAEFIXE))
+    sbe = set(cfg.get("sonstige_ertraege", []))
+    neutral = set(cfg.get("neutral", []))
+    zins = tuple(cfg.get("zins_praefixe", ["73", "87"]))
+    steuern = set(cfg.get("steuern", []))
+
+    def posten(konto):
+        if konto.startswith(GUV_FE_PRAEFIXE):
+            return "fe"
+        if konto.startswith(GUV_UFE_PRAEFIXE):
+            return "ufe"
+        if konto in neutral:
+            return "neutral"
+        if konto in sbe:
+            return "sbe"
+        if konto in steuern:
+            return "steuern"
+        if konto.startswith(zins):
+            return "zins"
+        if konto.startswith(erloes_praefixe):
+            return "erloese"
+        # Alles Uebrige ist Betriebsaufwand bzw. -ertrag: Material, Personal, sbA,
+        # Abschreibungen, Erstattungen, Konzernumlagen. Eine eigene Restgruppe gibt es
+        # bewusst nicht - so geht jedes Konto in genau einen Posten.
+        return "kosten"
+    guv["posten"] = [posten(k) for k in guv.index]
+    summe = guv.groupby("posten")["betrag"].sum()
+    g = lambda k: float(summe.get(k, 0.0))
+
+    sparten = [c for c in result.columns if c != "Summe"]
+    S = lambda z: float(result.loc[z, sparten].sum()) if z in result.index else 0.0
+    db3 = S("db3")
+    # Was die Kostenrechnung den Sparten an Kosten belastet - alles zwischen
+    # Betriebsleistung und DB III (Material, Fremdleistungen, sbA, FEK/MGK/VVGK nach
+    # Deckungsdifferenz, Sonderposten).
+    kosten_kore = S("betriebsleistung") - db3
+    ergebnis_guv = float(guv["betrag"].sum())
+
+    betrieb = [
+        ("Erlöse ohne Sparte (Abfallverwertung, Sonstiges, Skonti)", g("erloese") - S("erloese")),
+        ("Bestandsveränderung FE: FiBu gegen Kostenrechnung", g("fe") - S("bestand_fe")),
+        ("Bestandsveränderung UFE: FiBu gegen Sparten", g("ufe") - S("bestand_ufe")),
+        ("Sonstige betriebliche Erträge (nicht auf Sparten)", g("sbe")),
+        ("Kosten (Material, Personal, sbA, Abschreibungen): FiBu gegen Kostenrechnung",
+         g("kosten") + kosten_kore),
+    ]
+    betriebsergebnis = db3 + sum(b for _, b in betrieb)
+    bruecke = [("DB III (Summe der Sparten)", db3, "summe")]
+    bruecke += [(t, b, "posten") for t, b in betrieb]
+    bruecke.append(("Betriebsergebnis lt. GuV (BWA)", betriebsergebnis, "summe"))
+    bruecke += [
+        ("Neutrales Ergebnis (Anlagenverkauf, Kursdifferenzen, periodenfremd)", g("neutral"), "posten"),
+        ("Zinsergebnis", g("zins"), "posten"),
+        ("Steuern", g("steuern"), "posten"),
+    ]
+    rest = ergebnis_guv - betriebsergebnis - g("neutral") - g("zins") - g("steuern")
+    # Bliebe hier etwas, waere ein Konto in keinem Posten - z.B. aktivierte
+    # Eigenleistung, die in der Betriebsleistung steckt, aber kein GuV-Konto ist.
+    if abs(rest) >= 0.01:
+        bruecke.append(("Nicht zugeordneter Rest", rest, "rest"))
+    bruecke.append(("Ergebnis lt. GuV (entspricht „Vorläufiges Ergebnis“ der BWA)",
+                    ergebnis_guv, "summe"))
+
+    # Erloese je Bereich: GuV nach Konto, Sparten nach Produktgruppe
+    guv["bereich"] = [_bereich_des_kontos(k) for k in guv.index]
+    bereiche = []
+    for name, familie, _, _ in GUV_BEREICHE:
+        guv_wert = float(guv.loc[(guv["posten"] == "erloese") & (guv["bereich"] == familie), "betrag"].sum())
+        sp_wert = float(sum(result.loc["erloese", p] for p in sparten if p.startswith(familie)))
+        if abs(guv_wert) > 0.005 or abs(sp_wert) > 0.005:
+            bereiche.append({"name": name, "familie": familie, "guv": round(guv_wert, 2),
+                             "sparten": round(sp_wert, 2), "delta": round(guv_wert - sp_wert, 2)})
+    sonst = float(guv.loc[(guv["posten"] == "erloese") & guv["bereich"].isna(), "betrag"].sum())
+    bereiche.append({"name": "Sonstiges und Skonti", "familie": "", "guv": round(sonst, 2),
+                     "sparten": 0.0, "delta": round(sonst, 2)})
+
+    # Erloesbuchungen, deren Konto zu einem anderen Bereich gehoert als ihre Produktgruppe
+    kz = mapping["kostenart_zu_zeile"]
+    e = kptm_df[kptm_df["Kostenart"].map(lambda k: kz.get(k, {}).get("zeile") == "erloese")].copy()
+    e["kb"] = e["Kostenart"].map(_bereich_des_kontos)
+    e["fam"] = e["Produktgruppe"].fillna("").str[:2]
+    e = e[e["kb"].notna() & (e["kb"] != e["fam"])]
+    abweichend = []
+    for (konto, pg), wert in e.groupby(["Kostenart", "Produktgruppe"])["Wert/Menge"].sum().items():
+        abweichend.append({"konto": konto, "bezeichnung": str(susa["beschreibung"].get(konto, "")),
+                           "produktgruppe": pg, "betrag": round(-float(wert), 2)})
+    abweichend.sort(key=lambda x: -abs(x["betrag"]))
+
+    # Konto fuer Konto: was davon direkt auf Sparten gebucht ist (KPTM)
+    direkt = kptm_df[kptm_df["Produktgruppe"].notna()].groupby("Kostenart")["Wert/Menge"].sum()
+    namen = {"erloese": "Erlöse", "fe": "Bestandsveränderung FE", "ufe": "Bestandsveränderung UFE",
+             "sbe": "Sonstige betriebliche Erträge", "kosten": "Kosten", "neutral": "Neutral",
+             "zins": "Zinsen", "steuern": "Steuern"}
+    konten = []
+    for konto, z in guv.sort_values("betrag", key=abs, ascending=False).iterrows():
+        if abs(z["betrag"]) < 0.005:
+            continue
+        d = -float(direkt.get(konto, 0.0))
+        konten.append({"konto": konto, "bezeichnung": str(z["beschreibung"]),
+                       "posten": namen[z["posten"]], "guv": round(float(z["betrag"]), 2),
+                       "direkt": round(d, 2), "rest": round(float(z["betrag"]) - d, 2)})
+
+    return {"bruecke": [{"text": t, "betrag": round(b, 2), "art": a} for t, b, a in bruecke],
+            "ergebnis_guv": round(ergebnis_guv, 2), "db3": round(db3, 2),
+            "betriebsergebnis": round(betriebsergebnis, 2),
+            "bereiche": bereiche, "abweichende_buchungen": abweichend[:40],
+            "konten": konten}
+
+
+def _guv_blatt(wb, guv, zeitraum):
+    """Blatt 'Abgleich GuV': Bruecke, Erloese je Bereich, Konten im Einzelnen."""
+    ws = wb.create_sheet("Abgleich GuV", 2 if "Abstimmung" in wb.sheetnames else 1)
+    ws.cell(row=1, column=1, value=f"Abgleich mit der GuV – {zeitraum}").font = Font(bold=True, size=12)
+    ws.cell(row=2, column=1, value=(
+        "Vom DB III der Sparten zum Ergebnis der GuV. Grundlage ist die Summen- und "
+        "Saldenliste; das Ergebnis entspricht dem 'Vorläufigen Ergebnis' der BWA. Jedes "
+        "GuV-Konto gehört genau einem Posten an.")).font = Font(italic=True, size=9)
+    r = 4
+    for b in guv["bruecke"]:
+        fett = b["art"] == "summe"
+        z1 = ws.cell(row=r, column=1, value=("" if fett else "  ") + b["text"])
+        z2 = ws.cell(row=r, column=2, value=b["betrag"])
+        z2.number_format = "#,##0.00"
+        for z in (z1, z2):
+            z.border = BORDER
+            if fett:
+                z.font = FONT_BOLD
+                z.fill = FILL_FORMULA
+            if b["art"] == "rest":
+                z.fill = FILL_MANUAL
+        r += 1
+
+    r += 2
+    ws.cell(row=r, column=1, value="Erlöse je Bereich – GuV nach Konto, Sparten nach Produktgruppe").font = FONT_BOLD
+    r += 1
+    for j, t in enumerate(("Bereich", "GuV", "Sparten", "Δ"), start=1):
+        z = ws.cell(row=r, column=j, value=t)
+        z.fill, z.font = FILL_HEADER, FONT_HEADER
+    r += 1
+    for b in guv["bereiche"]:
+        for j, w in enumerate((b["name"] + (f" ({b['familie']}*)" if b["familie"] else ""),
+                               b["guv"], b["sparten"], b["delta"]), start=1):
+            z = ws.cell(row=r, column=j, value=w)
+            z.border = BORDER
+            if j > 1:
+                z.number_format = "#,##0.00"
+        r += 1
+    if guv["abweichende_buchungen"]:
+        r += 1
+        ws.cell(row=r, column=1, value=(
+            "Ursache der Verschiebungen zwischen den Bereichen: Erlösbuchungen, deren Konto zu "
+            "einem anderen Bereich gehört als ihre Produktgruppe")).font = Font(italic=True, size=9)
+        r += 1
+        for j, t in enumerate(("Konto", "Bezeichnung", "Produktgruppe", "Erlös"), start=1):
+            z = ws.cell(row=r, column=j, value=t)
+            z.fill, z.font = FILL_HEADER, FONT_HEADER
+        r += 1
+        for a in guv["abweichende_buchungen"]:
+            for j, w in enumerate((a["konto"], a["bezeichnung"], a["produktgruppe"], a["betrag"]), start=1):
+                z = ws.cell(row=r, column=j, value=w)
+                z.border = BORDER
+                if j == 4:
+                    z.number_format = "#,##0.00"
+            r += 1
+
+    r += 2
+    ws.cell(row=r, column=1, value=(
+        "Konten im Einzelnen – 'direkt auf Sparten' ist, was im KPTM-Export auf einer "
+        "Produktgruppe gebucht ist. Der Rest läuft über die Kostenstellen (Stundensatz, "
+        "Zuschläge, Deckungsdifferenzen) oder gehört keiner Sparte.")).font = Font(italic=True, size=9)
+    r += 1
+    for j, t in enumerate(("Konto", "Bezeichnung", "Posten", "GuV", "direkt auf Sparten", "Rest"), start=1):
+        z = ws.cell(row=r, column=j, value=t)
+        z.fill, z.font = FILL_HEADER, FONT_HEADER
+    r += 1
+    for k in guv["konten"]:
+        for j, w in enumerate((k["konto"], k["bezeichnung"], k["posten"], k["guv"], k["direkt"], k["rest"]), start=1):
+            z = ws.cell(row=r, column=j, value=w)
+            z.border = BORDER
+            if j >= 4:
+                z.number_format = "#,##0.00"
+        r += 1
+    for sp, b in (("A", 70), ("B", 34), ("C", 22), ("D", 16), ("E", 18), ("F", 16)):
+        ws.column_dimensions[sp].width = b
 
 
 def _abstimmung_blatt(wb, pruefungen, zeitraum):
@@ -2351,9 +2596,11 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         abstimmung += abstimmung_kostentraeger(df, kostentraeger_pfad, mapping, pg_config)
     if werkstatt_pruefung:
         abstimmung.append(werkstatt_pruefung)
+    guv = None
     if susa_pfad:
         abstimmung += abstimmung_susa(susa_pfad, df, mapping, result, ufe_statistik,
                                       bool(pwbs_ende and not ufe_warnungen))
+        guv = guv_abgleich(susa_pfad, df, mapping, result)
 
     saetze, satz_hinweise = zuschlagssaetze(result, mapping)
     unprod_betrag, unprod_stunden = unproduktive_gemeinkosten(df, mapping)
@@ -2367,6 +2614,7 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
                  naeherung_zellen=naeherung_zellen,
                  struktur=struktur,
                  abstimmung=abstimmung,
+                 guv=guv,
                  herleitung={
                      "kostentraeger": ({"umlage": dd_befund["umlage_df"],
                                         "zeilen_gesamt": dd_befund["zeilen_gesamt"]}
@@ -2420,6 +2668,8 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
         "struktur": ({k: v for k, v in struktur.items() if k != "paare"} if struktur else None),
         "naeherung_zellen": len(naeherung_zellen),
         "abstimmung": abstimmung,
+        "guv": ({k: v for k, v in guv.items() if k != "konten"} | {"konten": guv["konten"][:25]}
+                if guv else None),
         "susa_geladen": bool(susa_pfad),
         "db3_summe": float(result.loc["db3", "Summe"]),
         "erloese_summe": float(result.loc["erloese", "Summe"]),

@@ -97,6 +97,12 @@ const INFO_TEXTE = {
     Erl&ouml;se gesamt, Werkstattbestand zum Stichtag (Konten 1040000 + 1041000) und der hinterlegte
     Anfangsbestand. Material und Fremdleistungen sind gegen die FiBu nicht abstimmbar, weil die
     Kostenrechnung anders bewertet.`,
+  "guv": `<strong>Was ist es</strong>Die Überleitung vom DB&nbsp;III der Sparten zum Ergebnis
+    der GuV &ndash; Posten für Posten, so dass jeder Unterschied einen Namen hat.
+    <strong>Berechnung</strong>Aus der SuSa: Jedes GuV-Konto wird genau einem Posten zugeordnet
+    (Erlöse, Bestandsveränderungen, sonstige Erträge, Kosten, neutrales Ergebnis, Zinsen, Steuern).
+    Welche Konten die BWA als neutral führt, steht in der Konfiguration; geprüft an Q1 und
+    Jan&ndash;Sep 2026: Betriebsergebnis und vorläufiges Ergebnis der BWA werden centgenau getroffen.`,
   "pwbs-ende": `<strong>Woher</strong>Von der Buchhaltung: ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;
     in der Form <em>mit Spalte Produktgruppe</em>, gezogen <em>am</em> Stichtag (erster Tag nach
     dem Auswertungszeitraum) &ndash; nicht nachtr&auml;glich, sonst stimmen die Werte nicht mehr.
@@ -740,6 +746,58 @@ function showResult(summary, url, filename) {
       <span class="info-icon" tabindex="0" role="button" data-info="abstimmung" aria-label="Erklärung: Abstimmung">?</span></p>`;
     html += bereich("ab-abstimmung", "Abstimmung mit der Buchhaltung", `${nOk} von ${abst.length}`,
       nOk === abst.length ? "gruen" : "gelb", inhalt, false);
+  }
+
+  // Abgleich mit der GuV: Bruecke vom DB III der Sparten zum Ergebnis lt. GuV (aus der SuSa).
+  const guv = summary.guv;
+  if (guv) {
+    let g = `<table class="guv-tabelle"><tbody>`;
+    for (const b of guv.bruecke) {
+      g += `<tr class="guv-${b.art}"><td>${esc(b.text)}</td><td>${eurF(b.betrag)} €</td></tr>`;
+    }
+    g += `</tbody></table>`;
+    g += `<p class="hinweis">Grundlage ist die SuSa; die Zwischensummen entsprechen den Zeilen
+      „Betriebsergebnis" und „Vorläufiges Ergebnis" der BWA. Jedes GuV-Konto gehört genau
+      einem Posten an.
+      <span class="info-icon" tabindex="0" role="button" data-info="guv" aria-label="Erklärung: Abgleich mit der GuV">?</span></p>`;
+
+    g += `<details class="zuordnung"><summary>Erlöse je Bereich – GuV gegen Sparten</summary>
+      <table class="zuordnung-tabelle"><thead><tr><th>Bereich</th><th style="text-align:right">GuV</th>
+      <th style="text-align:right">Sparten</th><th style="text-align:right">Δ</th></tr></thead><tbody>`;
+    for (const b of guv.bereiche) {
+      g += `<tr><td>${esc(b.name)}${b.familie ? ` <span class="meta-label">${b.familie}*</span>` : ""}</td>
+        <td style="text-align:right">${eurF(b.guv)}</td><td style="text-align:right">${eurF(b.sparten)}</td>
+        <td style="text-align:right">${eurF(b.delta)}</td></tr>`;
+    }
+    g += `</tbody></table>`;
+    if (guv.abweichende_buchungen && guv.abweichende_buchungen.length) {
+      g += `<p class="hinweis">Die Verschiebungen zwischen den Bereichen kommen von Erlösbuchungen,
+        deren Konto zu einem anderen Bereich gehört als ihre Produktgruppe. Die GuV ordnet nach
+        Konto, die Spartenrechnung nach Produktgruppe.</p>
+        <table class="zuordnung-tabelle"><thead><tr><th>Konto</th><th>Produktgruppe</th>
+        <th style="text-align:right">Erlös</th></tr></thead><tbody>`;
+      for (const a of guv.abweichende_buchungen.slice(0, 20)) {
+        g += `<tr><td>${esc(a.konto)} <span class="meta-label">${esc(a.bezeichnung)}</span></td>
+          <td>${esc(a.produktgruppe)}</td><td style="text-align:right">${eurF(a.betrag)}</td></tr>`;
+      }
+      g += `</tbody></table>`;
+    }
+    g += `</details>`;
+
+    g += `<details class="zuordnung"><summary>Größte GuV-Konten im Einzelnen</summary>
+      <p class="hinweis">„direkt auf Sparten" ist, was im KPTM-Export auf einer Produktgruppe gebucht
+      ist. Der Rest läuft über die Kostenstellen (Stundensatz, Zuschläge, Deckungsdifferenzen) oder
+      gehört keiner Sparte. Alle Konten stehen im Blatt „Abgleich GuV" der Excel-Datei.</p>
+      <table class="zuordnung-tabelle"><thead><tr><th>Konto</th><th style="text-align:right">GuV</th>
+      <th style="text-align:right">direkt auf Sparten</th></tr></thead><tbody>`;
+    for (const k of guv.konten) {
+      g += `<tr><td>${esc(k.konto)} <span class="meta-label">${esc(k.bezeichnung)}</span></td>
+        <td style="text-align:right">${eurF(k.guv)}</td><td style="text-align:right">${eurF(k.direkt)}</td></tr>`;
+    }
+    g += `</tbody></table></details>`;
+
+    html += bereich("ab-guv", "Abgleich mit der GuV", `Ergebnis ${eurF(guv.ergebnis_guv)} €`,
+      guv.bruecke.some((b) => b.art === "rest") ? "gelb" : "neutral", g, false);
   }
 
   let kennzahlen = summaryZeile("Rohdaten-Zeilen verarbeitet", summary.zeilen.toLocaleString("de-DE"), "zeilen");

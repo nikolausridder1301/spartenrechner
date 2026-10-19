@@ -748,3 +748,29 @@ footer a { color: var(--accent); }
 }
 .kachel-link { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 .kachel-link:hover, .kachel-link:focus-visible { border-color: var(--accent); background: var(--accent-bg); outline: none; }
+
+/* Abgleich mit der GuV */
+.guv-tabelle { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.guv-tabelle td { padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.guv-tabelle td:last-child {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-left: 0.8rem;
+}
+.guv-tabelle .guv-posten td:first-child { padding-left: 0.9rem; color: var(--text-muted); }
+.guv-tabelle .guv-summe td { font-weight: 700; }
+.guv-tabelle .guv-rest td { color: var(--rot-text); font-weight: 600; }
+.zuordnung-tabelle .meta-label { font-size: 0.7rem; }
+/* Betraege und Spaltenkoepfe nie mitten im Wort umbrechen - nur Texte duerfen das. */
+.zuordnung-tabelle th,
+.zuordnung-tabelle td[style*="text-align:right"] {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .zuordnung { overflow-x: auto; }
+  .zuordnung-tabelle { font-size: 0.72rem; }
+  .zuordnung-tabelle th, .zuordnung-tabelle td { padding: 0.3rem 0.25rem; }
+}
