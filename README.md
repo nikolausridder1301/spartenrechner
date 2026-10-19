@@ -103,7 +103,7 @@ Hochzuladen sind drei Dateien plus – einmal im Jahr – der Anfangsbestand:
 |---|---|
 | `KPTM_Wertsummen_*.xls` | SQL-Abfrage ans ERP, kumuliert seit Jahresbeginn |
 | Kostenträger-Auswertung | Buchhaltung, nach dem Monatsabschluss gezogen |
-| SuSa (Summen- und Saldenliste), **optional** | Buchhaltung, gleicher Zeitraum – nur für die Abstimmung mit der FiBu |
+| SuSa (Summen- und Saldenliste) | Buchhaltung, gleicher Zeitraum – für die Abstimmung mit der FiBu und den Abgleich mit der GuV |
 | `PWBS_Werkstattbestand_*.xls` **mit Spalte Produktgruppe** | Buchhaltung, **am Stichtag** gezogen |
 
 ### Abstimmung mit der Buchhaltung – Prüfung ohne Referenzrechnung
@@ -138,7 +138,7 @@ Jan–Sep).
 
 ### Abgleich mit der GuV
 
-Mit SuSa zeigt das Tool zusätzlich die Überleitung vom **DB III der Sparten** zum
+Aus der SuSa zeigt das Tool außerdem die Überleitung vom **DB III der Sparten** zum
 **Ergebnis lt. GuV** – im Browser und im Blatt „Abgleich GuV" der Excel-Datei:
 
 DB III → Erlöse ohne Sparte → Bestandsveränderung FE und UFE (FiBu gegen

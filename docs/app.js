@@ -86,10 +86,10 @@ const INFO_TEXTE = {
     (z.&nbsp;B. &bdquo;SuSa 01-09.2026.csv&ldquo;) f&uuml;r denselben Zeitraum &ndash; sie kommt
     zusammen mit der Kostentr&auml;ger-Auswertung.
     <strong>Was</strong>Anfangs- und Endsaldo jedes Sachkontos.
-    <strong>Warum</strong>Nur zur Abstimmung: Das Tool pr&uuml;ft damit, ob die Erl&ouml;se mit der FiBu
-    &uuml;bereinstimmen und ob der Werkstattbestand dem Bilanzwert entspricht (richtiger
-    Stichtag, vollst&auml;ndige Datei). In die Rechnung selbst flie&szlig;t sie nicht ein &ndash;
-    ohne SuSa entsteht dieselbe Spartenrechnung, nur ohne diese Gegenprobe.`,
+    <strong>Warum</strong>F&uuml;r die Gegenprobe und den Abgleich mit der GuV: Das Tool pr&uuml;ft
+    damit, ob die Erl&ouml;se mit der FiBu &uuml;bereinstimmen und ob der Werkstattbestand dem
+    Bilanzwert entspricht (richtiger Stichtag, vollst&auml;ndige Datei), und leitet vom DB&nbsp;III
+    der Sparten auf das Ergebnis der GuV &uuml;ber. Die Spartenrechnung selbst rechnet sie nicht um.`,
   "abstimmung": `<strong>Was ist es</strong>Eine Gegenprobe ohne Referenzrechnung: Das Ergebnis wird
     gegen zwei Quellen der Buchhaltung gehalten, die unabh&auml;ngig vom KPTM-Export entstehen.
     <strong>Berechnung</strong>(1) Aus der Kostentr&auml;ger-Auswertung wird jede Zeile je Sparte ein
@@ -483,6 +483,11 @@ form.addEventListener("submit", async (e) => {
     showError("Bitte den PWBS Werkstattbestand zum Periodenende auswählen.");
     return;
   }
+  if (!susaFile) {
+    showError("Bitte die Summen- und Saldenliste (SuSa) der Buchhaltung auswählen – sie wird für "
+      + "die Abstimmung mit der FiBu und den Abgleich mit der GuV gebraucht.");
+    return;
+  }
   if (!parameterLesen()) {
     showError("Bitte die Betriebsparameter (betriebsparameter.xlsx) laden – ohne sie fehlen "
       + "Anfangsbestand und Umschlüsselung. Sie werden im Browser gespeichert, das ist "
@@ -501,8 +506,7 @@ form.addEventListener("submit", async (e) => {
     // KPTM-Namen laesst sich notfalls der Zeitraum lesen.
     const kptmPfad = await ablegen("/kptm", kptmFile);
     const ktPfad = await ablegen("/kostentraeger", kostentraegerFile);
-    // Optional: ohne SuSa entfaellt nur die Abstimmung mit der FiBu, gerechnet wird trotzdem.
-    const susaPfad = susaFile ? await ablegen("/susa", susaFile) : null;
+    const susaPfad = await ablegen("/susa", susaFile);
 
     // Werkstattbestand fuer die Bestandsveraenderung UFE (Pflicht, siehe Pruefung oben).
     // Der Anfangsbestand kommt aus den hinterlegten Betriebsparametern.
