@@ -47,7 +47,8 @@ h1, h2 { margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
   color: var(--text-muted);
 }
 
-.app { max-width: 640px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+/* 840 px: so passt im Abgleich mit der GuV jede Zeile in eine Zeile (gemessen: ab 820 px). */
+.app { max-width: 840px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
 
 .app-header {
   display: flex;
