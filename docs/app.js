@@ -103,6 +103,30 @@ const INFO_TEXTE = {
     (Erlöse, Bestandsveränderungen, sonstige Erträge, Kosten, neutrales Ergebnis, Zinsen, Steuern).
     Welche Konten die BWA als neutral führt, steht in der Konfiguration; geprüft an Q1 und
     Jan&ndash;Sep 2026: Betriebsergebnis und vorläufiges Ergebnis der BWA werden centgenau getroffen.`,
+  "guv_db3": `<strong>Was ist es</strong>Der Deckungsbeitrag III über alle Sparten zusammen – der Ausgangspunkt der Überleitung.
+    <strong>Woher kommt es</strong>Summe der Spalte „Summe“ in der Spartenrechnung: Betriebsleistung abzüglich aller Kosten, die die Kostenrechnung den Sparten zurechnet.`,
+  "guv_erloese": `<strong>Was ist es</strong>Umsätze, die zu keiner Produktgruppe gehören.
+    <strong>Woher kommt es</strong>Typisch sind Erlöse aus Abfall- und Schrottverwertung, sonstige Erlöse sowie gewährte Skonti. Sie stehen in der GuV, sind aber keinem Produkt zugeordnet und tauchen deshalb in keiner Sparte auf.`,
+  "guv_fe": `<strong>Was ist es</strong>Unterschied bei der Bestandsveränderung der fertigen Erzeugnisse zwischen FiBu und Kostenrechnung.
+    <strong>Woher kommt es</strong>Die Spartenrechnung übernimmt die Bestandsveränderung je Produktgruppe aus der Kostenrechnung. Die FiBu bucht auf denselben Konten, kann aber zusätzlich Buchungen enthalten, die keinem Kostenträger zugeordnet sind – etwa Abwertungen oder Inventurdifferenzen. Was es im Einzelfall ist, kann die Buchhaltung beantworten.`,
+  "guv_ufe": `<strong>Was ist es</strong>Unterschied bei der Bestandsveränderung der unfertigen Erzeugnisse (Werkstattbestand).
+    <strong>Woher kommt es</strong>Die FiBu bucht die Veränderung des gesamten Werkstattbestands. Die Spartenrechnung zählt nur Aufträge, die sich einer Sparte zuordnen lassen. Der Unterschied ist Werkstattbestand ohne Sparte – zum Jahresanfang und zum Stichtag. Er ist über das Jahr weitgehend konstant.`,
+  "guv_sbe": `<strong>Was ist es</strong>Erträge aus dem laufenden Betrieb, die keinem Produkt gehören.
+    <strong>Woher kommt es</strong>Zum Beispiel Kursgewinne beim Wareneinkauf, Versicherungsentschädigungen oder Erträge aus abgeschriebenen Forderungen. Sie zählen zum Betriebsergebnis, lassen sich aber keiner Sparte zurechnen.`,
+  "guv_kosten": `<strong>Was ist es</strong>Unterschied zwischen den Kosten in der FiBu und dem, was die Kostenrechnung den Sparten belastet.
+    <strong>Woher kommt es</strong>Die Kostenrechnung verrechnet Kosten über kalkulierte Sätze (Stundensatz, Zuschläge) und gleicht über die Deckungsdifferenzen auf die tatsächlichen Kosten der Kostenstellen ab. Übrig bleiben Kosten, die nicht auf Sparten landen – z. B. auf Objekten, die keine Sparte sind (Grundstücke, Photovoltaik, Abgrenzungen) – sowie Unterschiede in der Erfassung zwischen FiBu und Kostenrechnung. Ein positiver Betrag heißt: Die Sparten wurden mit mehr Kosten belastet, als die FiBu ausweist.`,
+  "guv_betriebsergebnis": `<strong>Was ist es</strong>Das Betriebsergebnis laut GuV – dieselbe Zeile wie in der BWA.
+    <strong>Woher kommt es</strong>DB III der Sparten plus die Posten darüber. Alles bis hierher betrifft den laufenden Betrieb.`,
+  "guv_neutral": `<strong>Was ist es</strong>Erträge und Aufwendungen, die nicht zum laufenden Betrieb gehören.
+    <strong>Woher kommt es</strong>Zum Beispiel Gewinne oder Verluste aus Anlagenverkäufen, Kursdifferenzen, periodenfremde Posten, Auflösung von Rückstellungen oder Abfindungen. Sie gehören zu keiner Sparte. Welche Konten neutral sind, steht in der Konfiguration – so, wie die Buchhaltung sie in der BWA führt.`,
+  "guv_zins": `<strong>Was ist es</strong>Zinserträge abzüglich Zinsaufwendungen.
+    <strong>Woher kommt es</strong>Finanzierung gehört zu keiner Sparte und steht deshalb nur in der GuV.`,
+  "guv_steuern": `<strong>Was ist es</strong>Steuern, die die BWA gesondert ausweist.
+    <strong>Woher kommt es</strong>Zum Beispiel Steuern für Vorjahre. Steuern, die zum laufenden Betrieb gehören (Kfz-Steuer, Grundsteuer), stecken dagegen in den Kosten.`,
+  "guv_rest": `<strong>Was ist es</strong>Kontrollzeile – sie muss 0,00 zeigen.
+    <strong>Woher kommt es</strong>Jedes GuV-Konto gehört genau einem Posten an. Steht hier etwas, ist ein Konto in keinem Posten gelandet; dann bitte melden.`,
+  "guv_ergebnis": `<strong>Was ist es</strong>Das Ergebnis laut GuV – entspricht dem „Vorläufigen Ergebnis“ der BWA.
+    <strong>Woher kommt es</strong>Summe aller Ertrags- und Aufwandskonten der Summen- und Saldenliste.`,
   "pwbs-ende": `<strong>Woher</strong>Von der Buchhaltung: ERP-Export &bdquo;PWBS_Werkstattbestand&ldquo;
     in der Form <em>mit Spalte Produktgruppe</em>, gezogen <em>am</em> Stichtag (erster Tag nach
     dem Auswertungszeitraum) &ndash; nicht nachtr&auml;glich, sonst stimmen die Werte nicht mehr.
@@ -754,7 +778,9 @@ function showResult(summary, url, filename) {
     let g = `<table class="guv-tabelle"><tbody>`;
     for (const b of guv.bruecke) {
       if (b.art === "rest" && Math.abs(b.betrag) < 0.01) continue;   // nur zeigen, wenn nicht null
-      g += `<tr class="guv-${b.art}"><td>${esc(b.text)}</td><td>${eurF(b.betrag)} €</td></tr>`;
+      const info = b.key ? ` <span class="info-icon" tabindex="0" role="button" data-info="guv_${b.key}"
+        aria-label="Erklärung: ${esc(b.text)}">?</span>` : "";
+      g += `<tr class="guv-${b.art}"><td>${esc(b.text)}${info}</td><td>${eurF(b.betrag)} €</td></tr>`;
     }
     g += `</tbody></table>`;
     g += `<p class="hinweis">Grundlage ist die SuSa; die Zwischensummen entsprechen den Zeilen
