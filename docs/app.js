@@ -137,12 +137,10 @@ const INFO_TEXTE = {
   "betriebsparameter": `<strong>Woher</strong>Die Datei betriebsparameter.xlsx &ndash; einmal von
     Ihnen gesichert (Button am Ende einer Berechnung) oder vom Controlling bereitgestellt.
     Sie wird im Browser gespeichert und danach automatisch verwendet.
-    <strong>Was</strong>Der Werkstattbestand zu Jahresbeginn je Sparte (Anfangsbestand), die
-    Zuschlagss&auml;tze als Sollwert und &ndash; im Jahr der Produktgruppen-Reorganisation &ndash; die
-    Liste, welcher Artikel in welche neue Produktgruppe geh&ouml;rt.
+    <strong>Was</strong>Der Werkstattbestand zu Jahresbeginn je Sparte (Anfangsbestand) und die
+    Zuschlagss&auml;tze der Kalkulation als Sollwert.
     <strong>Warum</strong>Ohne Anfangsbestand l&auml;sst sich die Ver&auml;nderung des Bestands im
-    Jahresverlauf nicht berechnen &ndash; der Endwert allein reicht nicht. Ohne die
-    Umschl&uuml;sselung stehen alte und neue Produktgruppen nebeneinander.`,
+    Jahresverlauf nicht berechnen &ndash; der Endwert allein reicht nicht.`,
 
   // --- Zeilen im Ergebnisteil: was die Zahl ist und wie sie zustande kommt ---
   "zeilen": `<strong>Was ist es</strong>Die Anzahl der Buchungszeilen, die aus dem
@@ -490,7 +488,7 @@ form.addEventListener("submit", async (e) => {
   }
   if (!parameterLesen()) {
     showError("Bitte die Betriebsparameter (betriebsparameter.xlsx) laden – ohne sie fehlen "
-      + "Anfangsbestand und Umschlüsselung. Sie werden im Browser gespeichert, das ist "
+      + "der Anfangsbestand und die Zuschlagssätze. Sie werden im Browser gespeichert, das ist "
       + "in der Regel nur einmal nötig.");
     return;
   }

@@ -91,8 +91,8 @@ jeder echten Sparte 0,00; die Beträge stehen nur auf Kostenobjekten ohne Sparte
 Die genaue Konten-Zuordnung steht in `config/kostenart_mapping.json` und
 `config/produktgruppen.json` und kann dort angepasst werden – z.B. wenn durch die
 laufende Produktgruppen-Reorganisation neue Codes hinzukommen. Ob die
-Automatisierung nach einer Änderung noch stimmt, prüft (mit `--alte-struktur` ohne
-Umschlüsselung, also je Sparte wie die Referenz):
+Automatisierung nach einer Änderung noch stimmt, prüft (Sparte für Sparte gegen die
+Referenz – Stand Oktober 2026: 239 exakt, 26 nah, 1 Widerspruch der Referenz in sich):
 
 ```bash
 python scripts/validate.py --rohdaten rohdaten/2026/Q1 --referenz "referenz/01-03 2026-Spartenrechnung Perforator.xlsx" --referenz-sheet "Spartenrechnung Jan-März 2026"
@@ -101,8 +101,8 @@ python scripts/validate.py --rohdaten rohdaten/2026/Q1 --referenz "referenz/01-0
 ## Arbeitsweise beim monatlichen Abschluss
 
 Hochzuladen sind vier Dateien je Zeitraum plus – einmalig, im Browser gespeichert –
-die Betriebsparameter (`betriebsparameter.xlsx`: Anfangsbestand, Zuschlagssätze,
-Umschlüsselung). Alle Felder sind Pflicht:
+die Betriebsparameter (`betriebsparameter.xlsx`: Anfangsbestand, Zuschlagssätze).
+Alle Felder sind Pflicht:
 
 | Datei | Woher |
 |---|---|
@@ -188,7 +188,7 @@ das Feld **Betriebsparameter** (`betriebsparameter.xlsx`):
 1. Beim **Jahresabschluss** (Stichtag 01.01. des Folgejahres) zeigt das Tool nach der
    Berechnung unter **„Werkstattbestand als Betriebsparameter sichern"** den
    errechneten Bestand als fertige **Excel-Tabelle** an. Einmal speichern – die
-   übrigen Inhalte der Datei (andere Jahre, Zuschlagssätze, Umschlüsselung) bleiben
+   übrigen Inhalte der Datei (andere Jahre, Zuschlagssätze) bleiben
    dabei erhalten.
 2. Diese Datei im Feld „Betriebsparameter" laden. Sie wird im Browser gespeichert und
    danach automatisch verwendet – das reicht für alle Monate des Jahres.
@@ -200,27 +200,28 @@ Geprüft: Der so ausgegebene Bestand ist als Anfangsbestand der Folgeperiode
 centgenau verwendbar (`UFE(Jan–Jun) = UFE(Q1) + [Bestand(01.07.) − Bestand(01.04.)]`,
 Abweichung 0,00 € über alle 14 Sparten).
 
-## Produktgruppen-Reorganisation 2026
+## Produktgruppen-Reorganisation 2026: die Spartenrechnung folgt der Buchung
 
-Seit Periode 4/2026 bucht das ERP auf neue Produktgruppen (Pressbohrtechnik:
-PB0001 geteilt, PB0003 „Pilot Tubes" in PB0002 aufgegangen, neu PB0006–PB0008).
-Ein kumulierter Export des Jahres mischt also beide Strukturen. Das Tool rechnet
-**2026 durchgängig in der neuen Struktur**:
+2026 werden die Produktgruppen der Pressbohr- bzw. Horizontalbohrtechnik neu geordnet
+(Liste „Alte vs Neue Produktgruppen"). Das ERP setzt das **schrittweise** um – Anteil
+der Listen-Artikel auf der neuen Gruppe: April 0 %, Mai 20 %, Juli 62 %, September
+90 % – und **nicht vollständig**: PB0007 und die Verschiebung PB0001 → PB0004 wurden
+bis September gar nicht gebucht.
 
-- **Buchungen** werden je Artikel umgeschlüsselt – nur, wenn sie auf der *alten*
-  Gruppe ihres Artikels stehen. Grundlage ist die Liste „Alte vs Neue
-  Produktgruppen", hinterlegt als Blatt `Umschluesselung` in den
-  Betriebsparametern (einmalig erzeugt mit `scripts/umstellung_neue_struktur.py`).
-  Die Zeilensummen bleiben dabei exakt erhalten. In der Ausgabe ist die
-  Produktgruppe dort eine Formel, die gebuchte Gruppe steht daneben.
-- **Näherung (gelb)** ist, was nur je Gruppe und nicht je Artikel vorliegt:
-  Deckungsdifferenzen, die noch auf einer alten, geteilten Gruppe gebucht sind
-  (verteilt nach ihrer Bezugsbasis), und der Anfangsbestand 2026 der geteilten
-  Gruppen (verteilt nach dem Werkstattbestand zum 01.01. je Auftrag). Über die
-  betroffenen Sparten zusammen sind die Werte exakt.
-- Drill Pipes und Injektionstechnik sind nicht betroffen.
-- Ab welchem Jahr umgeschlüsselt wird, steht in `config/produktgruppen.json`
-  (`umstellung_ab_jahr`); frühere Jahre bleiben in ihrer gebuchten Struktur.
+Die Spartenrechnung zeigt deshalb jede Buchung auf der Produktgruppe, auf die sie
+**gebucht** ist – wie KPTM, Kostenträger-Auswertung und FiBu. So entsteht keine
+Zuordnung, die die Buchhaltung nicht kennt, und es gibt keine Näherungen. Der Preis:
+Solange das ERP umstellt, stehen ähnliche Produkte teils unter der alten, teils unter
+der neuen Gruppe; ein Monatsvergleich einzelner PB-Sparten ist 2026 nur eingeschränkt
+aussagekräftig. Die Summe über alle PB-Sparten stimmt immer. Drill Pipes und
+Injektionstechnik sind nicht betroffen.
+
+Beim Werkstattbestand gilt deshalb die Gruppe, auf die der Auftrag gebucht ist (lt.
+KPTM); die Spalte „Produktgruppe" des Werkstattbestands – sie zeigt die *heutige*
+Gruppe des Artikels – ist nur Ersatz für Aufträge ohne Buchung im Zeitraum.
+
+Eine Umschlüsselung je Artikel in die neue Struktur ist im Code weiter vorhanden,
+aber abgeschaltet (`umstellung_ab_jahr: null` in `config/produktgruppen.json`).
 
 ## BWA-Datei: wird nicht gebraucht
 
@@ -258,13 +259,13 @@ docs/                            Weboberfläche (GitHub Pages) – Kernlogik + U
 scripts/spartenrechnung.py       CLI-Wrapper um dieselbe Kernlogik
 scripts/validate.py              zellgenauer Abgleich gegen eine manuelle Referenz
 scripts/pruefe_formeln.py        lässt Excel die Ausgabe nachrechnen (Formel = Programm?)
-scripts/umstellung_neue_struktur.py  einmalig: Betriebsparameter auf neue Produktgruppen
+scripts/umstellung_neue_struktur.py  (derzeit nicht verwendet) Betriebsparameter auf neue Produktgruppen
 config/                          Mapping-Tabellen (Kostenart→Zeile, Produktgruppen,
                                  Deckungsdifferenzen, Kontenzuordnung GuV-Abgleich)
 
 intern/                          ← eigenes, PRIVATES Repository (nicht hier drin)
   HERLEITUNG.md                    Herleitung jeder Zeile inkl. Belegen
-  betriebsparameter.xlsx           Anfangsbestände, Zuschlagssätze, Umschlüsselung
+  betriebsparameter.xlsx           Anfangsbestände, Zuschlagssätze
 rohdaten/ referenz/ output/      lokal, nicht versioniert
 ```
 

@@ -851,11 +851,11 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
 
     Ueber `manuelle_zuordnung` ({Auftragsnummer: Produktgruppe}) lassen sich einzelne
     Auftraege von Hand zuordnen - gedacht fuer die wenigen Posten, die keine Quelle
-    kennt. Vorrang hat nur die Spalte 'Produktgruppe' des Werkstattbestands selbst (die
-    Sparte laut ERP); vor allen uebrigen Quellen geht die Handzuordnung.
+    kennt.
 
-    Reihenfolge: Spalte 'Produktgruppe' > Hand > Auftragsnummer > Artikelnummer.
-    Dieselbe Reihenfolge bildet die Formel im Blatt 'Daten_PWBS_*' ab.
+    Reihenfolge: Hand > Auftragsnummer (gebuchte Gruppe lt. KPTM/PFAK) > Spalte
+    'Produktgruppe' des Werkstattbestands > Artikelnummer. Dieselbe Reihenfolge bildet
+    die Formel im Blatt 'Daten_PWBS_*' ab.
 
     Liefert (werte_je_produktgruppe, statistik). Die Statistik enthaelt auch die Liste
     der nicht zuordenbaren Auftraege, nach Wert absteigend - so lassen sich gezielt die
@@ -913,11 +913,17 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
             continue
         von_hand = manuell.get(_schluessel(rm))
         aus_spalte = _schluessel(pg_spalte)
-        ueber_auftrag = aus_spalte or von_hand or nach_auftrag.get(_schluessel(rm))
+        # Die Gruppe, auf die der Auftrag GEBUCHT ist (Hand bzw. KPTM), geht der Spalte
+        # 'Produktgruppe' des Werkstattbestands vor: die Spalte zeigt die heutige Gruppe
+        # des Artikels, und die weicht waehrend der Reorganisation von der Buchung ab
+        # (Jan-Sep 2026: 14 Auftraege). Die Spalte bleibt Ersatz fuer Auftraege ohne
+        # Buchung im Zeitraum.
+        gebucht = von_hand or nach_auftrag.get(_schluessel(rm))
+        ueber_auftrag = gebucht or aus_spalte
         pg = ueber_auftrag or nach_artikel.get(_schluessel(art))
         if pg is not None:
             pg = neue_struktur(pg, art)
-        if aus_spalte:
+        if aus_spalte and not gebucht:
             ueber_spalte += wert
         if pg is not None:
             je_pg[pg] = je_pg.get(pg, 0.0) + wert
@@ -2563,6 +2569,16 @@ def generate(kptm_path, config_dir, out_path, zeitraum=None, bwa_path=None, bwa_
             karte=karte, aufgeloest=aufgeloest)
         if ufe_statistik is not None:
             ufe_statistik["hinweise"] = stichtag_hinweise + ufe_statistik.get("hinweise", [])
+        if ufe and not karte and (params.get("anfangsbestand_naeherung") or {}).get(str(jahr)):
+            # Anfangsbestand in der neuen Produktgruppen-Struktur (bei der Umstellung
+            # aufgeteilt), gerechnet wird aber wie gebucht: PB-Sparten waeren je Sparte
+            # falsch, nur ihre Summe stimmte. Deshalb keine Zahl.
+            ufe_warnungen.append(
+                "Die hinterlegten Betriebsparameter enthalten den Anfangsbestand in der neuen "
+                "Produktgruppen-Struktur, die Spartenrechnung folgt aber der gebuchten "
+                "Produktgruppe. Bitte die aktuelle betriebsparameter.xlsx (gebuchte Struktur, "
+                "ohne Spalte 'Herkunft') laden.")
+            ufe = None
         if ufe and kostentraeger_pfad:
             werkstatt_pruefung = pruefe_werkstattbestand_buchung(
                 kostentraeger_pfad, ufe, ufe_statistik)

@@ -54,8 +54,8 @@
   },
   "_hinweis_neue_sparten": "Neue Produktgruppen tauchen im Jahresverlauf auf. PB0006 und PB0008 erstmals in Q2 2026; PB0007 ist in der Reorganisation Horizontalbohrtechnik vorgesehen, in den Buchungsdaten aber noch nicht aufgetreten - hier vorab eingetragen, damit es beim ersten Auftreten an der richtigen Stelle steht. Die Bezeichnungen stammen aus dem Blatt 'neue_Produktgruppen' der Datei 'Alte vs Neue Produktgruppen Horizontalbohrtechnik.xlsx'. Das Tool verliert unbekannte Gruppen nicht - es haengt sie als eigene Spalte an und meldet sie; die Meldung bitte ernst nehmen.",
   "_hinweis_bezeichnung": "Klartextnamen der Sparten, erscheinen als Zeile 'Bezeichnung' im Ergebnis und als Beschriftung im Diagramm. Leer bedeutet: Name nicht bekannt - dann zeigt das Tool den Code. PB0006 und PB0008 sind 2026 neu entstanden; ihre Bezeichnung bitte aus dem ERP nachtragen, erfunden wird hier nichts.",
-  "umstellung_ab_jahr": 2026,
-  "umstellung_hinweis": "Ab diesem Geschaeftsjahr rechnet das Tool in der neuen Produktgruppen-Struktur: Buchungen unter alten Gruppen werden je Artikel umgeschluesselt (Betriebsparameter, Blatt 'Umschluesselung'). Fruehere Jahre bleiben in ihrer gebuchten Struktur.",
+  "umstellung_ab_jahr": null,
+  "umstellung_hinweis": "Abgeschaltet (Oktober 2026): Die Spartenrechnung folgt der GEBUCHTEN Produktgruppe, wie im KPTM, in der Kostentraeger-Auswertung und in der FiBu. Grund: Das ERP setzt die Reorganisationsliste nur schrittweise und nicht vollstaendig um (PB0007 und PB0001->PB0004 gar nicht) - eine Umschluesselung im Tool haette Erloese auf Gruppen gezeigt, die die Buchhaltung nicht kennt. Ein Jahr eintragen schaltet die Umschluesselung je Artikel wieder ein (Betriebsparameter, Blatt 'Umschluesselung').",
   "aufgeloest": {
     "PB0003": "PB0002"
   },

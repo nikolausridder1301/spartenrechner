@@ -405,15 +405,17 @@ def _pwbs_blatt(wb, pfad, titel, hinweis, umschl=False):
     c_basis = get_column_letter(len(roh.columns) + 1)
     c_sparte = get_column_letter(len(roh.columns) + len(titel_sp))
     for r in range(erste, letzte + 1):
-        kette = (f'IFERROR(INDEX(Zuordnung!$B:$B,'
-                 f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung!$A:$A,0)),'
-                 f'IFERROR(INDEX(Zuordnung!$F:$F,'
-                 f'MATCH(TEXT({s_art}{r},"@"),Zuordnung!$E:$E,0)),'
-                 f'"(nicht zuordenbar)"))')
+        # Reihenfolge wie im Programm: gebuchte Gruppe des Auftrags (Blatt 'Zuordnung',
+        # links) > Spalte 'Produktgruppe' des Werkstattbestands > Artikelnummer.
+        nach_artikel = (f'IFERROR(INDEX(Zuordnung!$F:$F,'
+                        f'MATCH(TEXT({s_art}{r},"@"),Zuordnung!$E:$E,0)),'
+                        f'"(nicht zuordenbar)")')
         if s_pg:
             # GLAETTEN: das ERP liefert fuer manche Auftraege ein Leerzeichen statt
             # einer leeren Zelle - das Programm wertet beides als "keine Angabe".
-            kette = f'IF(TRIM({s_pg}{r})<>"",TRIM({s_pg}{r}),{kette})'
+            nach_artikel = f'IF(TRIM({s_pg}{r})<>"",TRIM({s_pg}{r}),{nach_artikel})'
+        kette = (f'IFERROR(INDEX(Zuordnung!$B:$B,'
+                 f'MATCH(TEXT({s_rm}{r},"@"),Zuordnung!$A:$A,0)),{nach_artikel})')
         ws.cell(row=r, column=len(roh.columns) + 1,
                 value=f'=IF({s_art}{r}="","(Serviceauftrag)",{kette})')
         if umschl:
