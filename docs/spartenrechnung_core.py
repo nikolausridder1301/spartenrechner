@@ -310,7 +310,7 @@ def anfangsbestand_umschluesseln(anfangsbestand, pwbs_pfad, karte, aufgeloest=No
     Liefert (neuer_anfangsbestand, anteile je alter Gruppe, naeherung) - naeherung sind
     die neuen Gruppen, die einen ANTEIL (< 100 %) einer alten Gruppe erhalten haben.
     """
-    df = pd.read_excel(pwbs_pfad, sheet_name="Penta")
+    df = lies_penta(pwbs_pfad)
     df.columns = [str(c).strip() for c in df.columns]
     art = df["Artikelnummer"].map(_schluessel)
     spalte = df["Produktgruppe"].map(_schluessel)
@@ -560,6 +560,38 @@ _PFLICHTSPALTEN = {
 }
 
 
+def lies_penta(pfad):
+    """Liest das Blatt 'Penta' eines ERP-Exports - mit verstaendlicher Meldung, wenn es fehlt.
+
+    Fehlt das Blatt, ist es fast immer keine Originaldatei: entweder in Excel neu
+    gespeichert ('Tabelle1') oder ein Datenblatt aus einer vom Tool erzeugten
+    Spartenrechnung, herauskopiert. Letzteres sieht aus wie ein Export, ist aber
+    gekuerzt (Spalten ohne Informationsgehalt fehlen, darunter das Geschaeftsjahr; bei
+    der Kostentraeger-Auswertung stehen nur die Umlagezeilen drin)."""
+    try:
+        return pd.read_excel(pfad, sheet_name="Penta")
+    except ValueError as e:
+        if "Penta" not in str(e):
+            raise
+    name = os.path.basename(str(pfad))
+    try:
+        blaetter = pd.ExcelFile(pfad).sheet_names
+        erste = pd.read_excel(pfad, sheet_name=0, header=None, nrows=1).iloc[0, 0]
+    except Exception:
+        blaetter, erste = [], None
+    aus_tool = isinstance(erste, str) and ("gelbe" in erste or "gelben" in erste)
+    text = (f"'{name}' ist kein Original-Export aus dem ERP: das Tabellenblatt 'Penta' fehlt"
+            + (f" (gefunden: {', '.join(map(str, blaetter[:4]))})" if blaetter else "") + ". ")
+    if aus_tool:
+        text += ("Die Datei ist ein Datenblatt aus einer vom Tool erzeugten Spartenrechnung - "
+                 "das ist gekürzt und taugt nicht als Eingabe. Bitte die Originaldatei "
+                 "hochladen, so wie sie aus Penta exportiert wurde.")
+    else:
+        text += ("Bitte die Datei unverändert hochladen, so wie sie aus Penta exportiert wurde "
+                 "(nicht in Excel neu gespeichert oder umbenannt).")
+    raise ValueError(text)
+
+
 def _pruefe_datei(df, art, pfad):
     """Prueft eine eingelesene Datei auf Brauchbarkeit, bevor gerechnet wird."""
     name = os.path.basename(str(pfad))
@@ -588,7 +620,7 @@ def _pruefe_datei(df, art, pfad):
 
 
 def load_kptm(path):
-    df = pd.read_excel(path, sheet_name="Penta")
+    df = lies_penta(path)
     df.columns = [c.strip() for c in df.columns]
     _pruefe_datei(df, "KPTM", path)
     # Zahlenspalte absichern: kommt sie als Text (z.B. mit Dezimalkomma), scheitert
@@ -866,7 +898,7 @@ def werkstattbestand(pwbs_pfad, nach_auftrag, nach_artikel, manuelle_zuordnung=N
     nicht zum Werkstattbestand. Ein nicht zuordenbarer Auftrag MIT Artikelnummer ist
     dagegen eine echte Luecke in der PFAK-Abdeckung.
     """
-    df = pd.read_excel(pwbs_pfad, sheet_name="Penta")
+    df = lies_penta(pwbs_pfad)
     df.columns = [c.strip() for c in df.columns]
     _pruefe_datei(df, "PWBS", pwbs_pfad)
     je_pg = {}
@@ -1298,7 +1330,7 @@ def lade_deckungsdifferenzen(pfad, mapping):
                 "zeilen_gesamt": n, "perioden": (von, bis, jahr_von, jahr_bis),
                 "umlage_df": DataFrame der Umlagezeilen (fuer das Datenblatt)}
     """
-    df = pd.read_excel(pfad, sheet_name="Penta")
+    df = lies_penta(pfad)
     df.columns = [str(c).strip() for c in df.columns]
     _pruefe_datei(df, "Kostenträger", pfad)
 
@@ -2003,7 +2035,7 @@ def abstimmung_kostentraeger(kptm_df, kostentraeger_pfad, mapping, pg_config):
         df["Produktgruppe"] = df["Produktgruppe (gebucht)"]
     r_kptm, sparten, _, _, _ = build_spartenrechnung(df, mapping, pg_config)
 
-    kt = pd.read_excel(kostentraeger_pfad, sheet_name="Penta")
+    kt = lies_penta(kostentraeger_pfad)
     kt.columns = [str(c).strip() for c in kt.columns]
     kt = kt[~kt["Kostenart"].astype(str).str.strip().str.startswith("U")].copy()
     kt["Kostenart"] = kt["Kostenart"].astype(str).str.strip()
@@ -2462,7 +2494,7 @@ def pruefe_werkstattbestand_buchung(kostentraeger_pfad, ufe, ufe_statistik, schw
     """
     if not ufe or not ufe_statistik:
         return None
-    kt = pd.read_excel(kostentraeger_pfad, sheet_name="Penta")
+    kt = lies_penta(kostentraeger_pfad)
     kt.columns = [str(c).strip() for c in kt.columns]
     gebucht = kt["Kostenart"].astype(str).str.strip().isin(UFE_KONTEN)
     if not gebucht.any():
